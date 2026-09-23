@@ -89,6 +89,8 @@ def parse_tradingview_symbol(value: str) -> JesseInstrument:
     if colon_count > 1:
         raise HistoricalDataRequestError(f'TradingView symbol {value!r} has more than one ":"')
     prefix, _, ticker = normalized.partition(':')
+    # Tolerate spaces around ':' ('NSE : RELIANCE') the same way for every prefix.
+    prefix, ticker = prefix.strip(), ticker.strip()
     if not prefix:
         raise HistoricalDataRequestError(f'TradingView symbol {value!r} is missing its EXCHANGE prefix before ":"')
     if not ticker:
@@ -100,7 +102,7 @@ def parse_tradingview_symbol(value: str) -> JesseInstrument:
         )
     # AMFI has no ticker vocabulary of its own yet (phase P4) - it identifies mutual
     # fund schemes purely by their numeric AMFI scheme code.
-    if prefix == 'AMFI' and not ticker.isdigit():
+    if prefix == 'AMFI' and not (ticker.isascii() and ticker.isdigit()):
         raise HistoricalDataRequestError(
             f'AMFI TradingView symbol {value!r} must use a numeric scheme code, e.g. AMFI:119551'
         )
@@ -118,7 +120,7 @@ def to_tradingview_symbol(exchange: str, symbol: str) -> str:
         )
     prefix = _EXCHANGE_TO_TRADINGVIEW_PREFIX[exchange]
     ticker = to_exchange_ticker(symbol)
-    if prefix == 'AMFI' and not ticker.isdigit():
+    if prefix == 'AMFI' and not (ticker.isascii() and ticker.isdigit()):
         raise HistoricalDataRequestError(
             f'AMFI Jesse symbol {symbol!r} must decode to a numeric scheme code, got {ticker!r}'
         )
