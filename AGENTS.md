@@ -44,6 +44,34 @@ Rules:
 - Independent subtasks (e.g. implementer on module A, doc-writer on module B) can run in
   parallel.
 
+## GitHub Workflow
+
+All development goes through branches and pull requests. `origin` is the fork
+`dev-pmallapp/jesse` (parent: `jesse-ai/jesse`). The main session (Opus) owns every git/`gh`
+step below; subagents never commit, push, or open PRs.
+
+1. **Never commit directly to `master`.** Start each task from an up-to-date master:
+   `git fetch origin && git switch -c <type>/<short-kebab-desc> origin/master`.
+   Branch types match existing branches: `feat/`, `fix/`, `chore/`, `refactor/`, `docs/`,
+   `perf/`, `test/`.
+2. **Commits** use Conventional Commits, as in the existing history:
+   `feat: …`, `fix: …`, `chore: …`, `refactor: …`, `docs(scope): …`. Commit at the end of
+   each logical step and stage only the files this task touched.
+3. **Before pushing**: `tester` has run the relevant `pytest` targets and `reviewer` has
+   reviewed the branch diff (`git diff origin/master...HEAD`); high/medium findings are
+   fixed or explicitly deferred.
+4. **Push and open a PR** against the fork's master:
+   `git push -u origin <branch>` then
+   `gh pr create --repo dev-pmallapp/jesse --base master` with a summary, the motivation,
+   the test commands run with their results, and any jesse-live / dashboard / jesse-rust
+   impact. Link the issue with `Closes #N` when there is one.
+5. **CI**: `.github/workflows/python-package.yml` runs on PRs to master (Linux/macOS/Windows,
+   Python 3.10–3.13). Check it with `gh pr checks --watch`; fix failures on the same branch.
+6. **Merging is the user's call.** Do not merge, force-push shared branches, delete remote
+   branches, or open PRs/issues against upstream `jesse-ai/jesse` unless explicitly asked.
+7. **Releases** (version tags) follow "Publishing the Docker Image" below and are only cut
+   on request, from master after the PR is merged.
+
 ## Key Characteristics
 
 ### Central Framework
