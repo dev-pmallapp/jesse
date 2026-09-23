@@ -2,6 +2,8 @@
 
 Status: **draft, not started** · Scope owner: orchestrator (Opus) · Last updated: 2026-09-23
 
+Tracking: dev-pmallapp/jesse#1 (epics #13, #18, #24, #28, #31, #38; one milestone per phase).
+
 ## Goal
 
 Research, screening and backtesting of Indian instruments for **swing trading**. No live
