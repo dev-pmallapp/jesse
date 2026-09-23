@@ -150,3 +150,7 @@ testing-*.py
 # lsp
 jesse/lsp/
 pyrightconfig.json
+
+# Claude Code per-machine files
+.claude/settings.local.json
+.claude/HANDOFF.md
