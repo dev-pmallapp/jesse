@@ -22,6 +22,8 @@ lives in `archive_parsing.py`; this module keeps only what is NSE-specific:
 URLs, the series allowlist/priority, the legacy zip's expected member name, and
 the catalog.
 """
+import time
+from collections.abc import Callable
 from datetime import date
 
 import jesse.helpers as jh
@@ -73,6 +75,14 @@ _LEGACY_URL_TEMPLATE = (
 _EQUITY_MASTER_URL = 'https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv'
 _ETF_MASTER_URL = 'https://nsearchives.nseindia.com/content/equities/eq_etfseclist.csv'
 
+# How long the ticker->ISIN map (built from the same two security master files as the
+# symbol catalog) stays cached before the next lookup re-fetches it - same value/
+# rationale as every other India catalog cache in this package (BSE's recent-UDiFF
+# cache, NseIndexSource's catalog cache): long enough that a batch of `isin_for` calls
+# during one import doesn't re-fetch per ticker, short enough that a long-running
+# process eventually notices a new listing.
+_ISIN_MAP_CACHE_TTL_SECONDS = 12 * 60 * 60
+
 # Columns this module actually reads. The legacy format's column set varies by
 # era (e.g. the 1995 file lacks TOTALTRADES/ISIN, which are not read here
 # anyway), so only these are required - a file missing one of them is treated
@@ -96,9 +106,20 @@ class NseBhavcopySource(ArchiveDailySource):
     # closes, and PREVCLOSE is never adjusted either.
     prices_adjusted = False
 
-    def __init__(self, client: IndiaHttpClient | None = None) -> None:
+    def __init__(self, client: IndiaHttpClient | None = None, *, monotonic: Callable[[], float] | None = None) -> None:
         super().__init__()
         self._client = client if client is not None else IndiaHttpClient()
+        # Injectable so tests control the ISIN-map cache's TTL expiry without sleeping
+        # for real hours (mirrors BseBhavcopySource/NseIndexSource).
+        self._monotonic = monotonic if monotonic is not None else time.monotonic
+        self._isin_by_ticker: dict[str, str] | None = None
+        # The reverse of `_isin_by_ticker`, built and cached alongside it (see
+        # `_cached_isin_maps`) - backs `symbol_for_isin`, used by fix-up A (story #7) to
+        # join a BSE row's ISIN back to its NSE trading symbol.
+        self._ticker_by_isin: dict[str, str] | None = None
+        # None means "not cached" (never fetched, or a failed fetch deliberately left
+        # uncached - see `_cached_isin_maps`), not "cached at time zero".
+        self._isin_by_ticker_cached_at: float | None = None
 
     def fetch_session(self, session: date) -> dict[str, DailyBar] | None:
         if session < NSE_FIRST_SESSION:
@@ -160,6 +181,82 @@ class NseBhavcopySource(ArchiveDailySource):
             )
 
         return tuple(entries)
+
+    def isin_for(self, ticker: str) -> str | None:
+        """ISIN for `ticker` from the same two security master files as the symbol
+        catalog (EQUITY_L.csv's `ISIN NUMBER`, eq_etfseclist.csv's `ISINNumber` - the
+        two files spell the column differently). Story #7 uses this to look up NSE
+        securities' ISINs for split/bonus adjustment (see IndiaDailySource.isin_for).
+        Returns None when the map itself could not be fetched, or `ticker` isn't in it
+        (e.g. long delisted) - never raises.
+        """
+        forward, _reverse = self._cached_isin_maps()
+        if forward is None:
+            return None
+        return forward.get(ticker.strip().upper())
+
+    def symbol_for_isin(self, isin: str) -> str | None:
+        """The reverse of `isin_for`: the NSE trading symbol currently listed under
+        `isin`, from the same cached security-master maps. Used by
+        `IndiaExchangeProvider` (fix-up A, story #7) to join a BSE-sourced ISIN back to
+        an NSE symbol - ISIN is a security-level identifier shared across exchanges, so
+        a dual-listed company's BSE and NSE ISINs normally agree; this recovers the NSE
+        symbol so `CorporateActionsStore` can also match by symbol, which is what
+        actually covers an ISIN reissue (see the store's docstring). Returns None when
+        the map itself could not be fetched, or `isin` isn't in it - never raises.
+        """
+        _forward, reverse = self._cached_isin_maps()
+        if reverse is None:
+            return None
+        return reverse.get(isin.strip().upper())
+
+    def _cached_isin_maps(self) -> tuple[dict[str, str], dict[str, str]] | tuple[None, None]:
+        now = self._monotonic()
+        if (
+            self._isin_by_ticker is not None
+            and self._isin_by_ticker_cached_at is not None
+            and now - self._isin_by_ticker_cached_at < _ISIN_MAP_CACHE_TTL_SECONDS
+        ):
+            return self._isin_by_ticker, self._ticker_by_isin
+
+        try:
+            forward = self._fetch_isin_map()
+        except ProviderUnavailableError:
+            # Never cache a failure - the very next call retries instead of permanently
+            # assuming no ISIN is known (same pattern as every other India catalog cache).
+            self._isin_by_ticker = None
+            self._ticker_by_isin = None
+            self._isin_by_ticker_cached_at = None
+            return None, None
+
+        reverse: dict[str, str] = {}
+        for ticker, isin in forward.items():
+            # setdefault: two tickers sharing one ISIN would be a genuine NSE data
+            # anomaly - keep whichever was encountered first rather than guessing which
+            # one is "current".
+            reverse.setdefault(isin, ticker)
+
+        self._isin_by_ticker = forward
+        self._ticker_by_isin = reverse
+        self._isin_by_ticker_cached_at = now
+        return forward, reverse
+
+    def _fetch_isin_map(self) -> dict[str, str]:
+        mapping: dict[str, str] = {}
+        for row in self._fetch_master_rows(_ETF_MASTER_URL):
+            ticker = field(row, 'Symbol').strip().upper()
+            isin = field(row, 'ISINNumber').strip().upper()
+            if ticker and isin:
+                mapping[ticker] = isin
+        for row in self._fetch_master_rows(_EQUITY_MASTER_URL):
+            ticker = field(row, 'SYMBOL').strip().upper()
+            isin = field(row, 'ISIN NUMBER').strip().upper()
+            # setdefault: a ticker listed in both files is an ETF (same rule
+            # `list_symbol_entries` applies) - the ETF file's ISIN, already recorded
+            # above, wins rather than being overwritten.
+            if ticker and isin:
+                mapping.setdefault(ticker, isin)
+        return mapping
 
     def _fetch_master_rows(self, url: str) -> list[dict[str, str]]:
         payload = self._client.get(url, expect='csv')

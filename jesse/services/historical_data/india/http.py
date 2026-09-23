@@ -80,13 +80,22 @@ class IndiaHttpClient:
         *,
         expect: Literal['csv', 'json', 'zip'],
         referer: str | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> bytes | Any | None:
-        """Fetch `url`, returning None when the resource is not published (see module docstring)."""
+        """Fetch `url`, returning None when the resource is not published (see module docstring).
+
+        `extra_headers` overlays (never replaces) the default header set - used by
+        `NseCorporateActionsClient` (corporate_actions.py) to add the
+        `Accept`/`X-Requested-With` headers NSE's corporate-actions JSON API expects on
+        top of the Referer already supported here.
+        """
         host = urlparse(url).netloc
         headers = dict(INDIA_DEFAULT_HEADERS)
         resolved_referer = referer if referer is not None else self._referer
         if resolved_referer is not None:
             headers['Referer'] = resolved_referer
+        if extra_headers:
+            headers.update(extra_headers)
 
         for attempt in range(INDIA_REQUEST_RETRIES + 1):
             self._wait_for_host_slot(host)
