@@ -21,10 +21,12 @@ from .massive_stocks import (
     MassiveIndicesProvider,
     MassiveStocksProvider,
 )
+from .india import BseProvider, NseProvider
 
 __all__ = [
     'AdjustmentMode',
     'AssetClass',
+    'BseProvider',
     'HistoricalCandle',
     'HistoricalCandleBatch',
     'HistoricalCandleDataset',
@@ -40,6 +42,7 @@ __all__ = [
     'MassiveFuturesProvider',
     'MassiveIndicesProvider',
     'MassiveStocksProvider',
+    'NseProvider',
     'ProviderCapabilities',
     'SymbolCatalogEntry',
 ]

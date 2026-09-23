@@ -393,6 +393,6 @@ def _parse_legacy_row(row: dict[str, str], session: date) -> tuple[str, str, Dai
 # routes between this and NseIndexSource automatically. This module's own registration
 # stays (non-default) so bhavcopy can still be selected explicitly
 # (`create_source('NSE', 'nse_bhavcopy')`) when a caller wants stocks/ETFs only.
-# Exchange registration into jesse's own info/drivers layer is a separate later story
-# (#9), not this one.
+# Exchange registration into jesse's own info/drivers layer (story #9) is separate -
+# see exchange_providers.py.
 register_source(NseBhavcopySource)

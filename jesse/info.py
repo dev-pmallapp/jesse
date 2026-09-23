@@ -619,6 +619,52 @@ exchange_info = {
         "simulation_model": "spot",
         "annualization": 252,
     },
+    exchanges_enums.NSE: {
+        "name": exchanges_enums.NSE,
+        "url": "https://www.nseindia.com",
+        # NSE is a historical data source (backed by historical_data/india), so execution fees remain a run setting.
+        "fee": 0.0,
+        "type": "spot",
+        "supported_leverage_modes": [],
+        # Only 1D is usable: `daily_bars_only` below rejects every other timeframe (see validators.py).
+        "supported_timeframes": [timeframes.DAY_1],
+        "modes": {
+            "backtesting": True,
+            "live_trading": False,
+        },
+        "required_live_plan": "premium",
+        "settlement_currency": "INR",
+        "asset_class": "equity",
+        "instrument_type": "stock",
+        "simulation_model": "spot",
+        "annualization": 252,
+        # `is_daily_bars_only`/`_validate_daily_bars_only_timeframes` (services/validators.py) reject any
+        # non-1D route: the India source layer stores exactly one 1m row per session, stamped at 15:29 IST.
+        "daily_bars_only": True,
+    },
+    exchanges_enums.BSE: {
+        "name": exchanges_enums.BSE,
+        "url": "https://www.bseindia.com",
+        # BSE is a historical data source (backed by historical_data/india), so execution fees remain a run setting.
+        "fee": 0.0,
+        "type": "spot",
+        "supported_leverage_modes": [],
+        # Only 1D is usable: `daily_bars_only` below rejects every other timeframe (see validators.py).
+        "supported_timeframes": [timeframes.DAY_1],
+        "modes": {
+            "backtesting": True,
+            "live_trading": False,
+        },
+        "required_live_plan": "premium",
+        "settlement_currency": "INR",
+        "asset_class": "equity",
+        "instrument_type": "stock",
+        "simulation_model": "spot",
+        "annualization": 252,
+        # `is_daily_bars_only`/`_validate_daily_bars_only_timeframes` (services/validators.py) reject any
+        # non-1D route: the India source layer stores exactly one 1m row per session, stamped at 15:29 IST.
+        "daily_bars_only": True,
+    },
 }
 
 # Trading exchange entries are crypto unless a historical source declares its

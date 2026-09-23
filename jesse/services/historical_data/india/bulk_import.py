@@ -29,17 +29,14 @@ from jesse.repositories import candle_repository
 from ..contracts import HistoricalCandle
 from ..errors import HistoricalDataError
 from .adjustment_state import record_adjustment_state, refresh_adjustments
-from .archive_cache import ArchiveFileCache
+from .archive_cache import DEFAULT_ARCHIVE_CACHE_DIR, ArchiveFileCache
 from .provider import IndiaExchangeProvider
 from .sources import DailyBar
 from .symbols import to_jesse_symbol
 
-# Standard on-disk location for `import_sessions`'s default archive cache, under the
-# calling project's storage directory (mirrors Jesse's existing `storage/...`
-# convention - see e.g. jesse/services/cache.py's `storage/temp/`). Relative, like every
-# other `storage/` path in this codebase: resolved against the current working
-# directory, which Jesse always runs from the project root.
-DEFAULT_ARCHIVE_CACHE_DIR = 'storage/india-archives'
+# `DEFAULT_ARCHIVE_CACHE_DIR` now lives in archive_cache.py (see that module for why);
+# imported (and left unused-looking) here so `bulk_import.DEFAULT_ARCHIVE_CACHE_DIR`
+# keeps working for any existing caller.
 
 # `import_sessions` processes the requested range in chunks of this many CALENDAR days
 # (not real trading sessions - a chunk therefore holds AT MOST this many sessions, and

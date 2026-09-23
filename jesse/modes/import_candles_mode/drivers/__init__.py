@@ -25,11 +25,13 @@ from jesse.modes.import_candles_mode.drivers.Kraken.KrakenSpot import KrakenSpot
 from jesse.modes.import_candles_mode.drivers.Kraken.KrakenPerpetual import KrakenPerpetual
 from jesse.modes.import_candles_mode.drivers.Kraken.KrakenPerpetualTestnet import KrakenPerpetualTestnet
 from jesse.services.historical_data import (
+    BseProvider,
     HistoricalCandleProviderRegistry,
     MassiveCurrenciesProvider,
     MassiveFuturesProvider,
     MassiveIndicesProvider,
     MassiveStocksProvider,
+    NseProvider,
 )
 
 
@@ -71,6 +73,10 @@ historical_provider_classes = {
     exchanges.MASSIVE_CURRENCIES: MassiveCurrenciesProvider,
     exchanges.MASSIVE_INDICES: MassiveIndicesProvider,
     exchanges.MASSIVE_FUTURES: MassiveFuturesProvider,
+    # Backtest-only (story #9): not in `drivers` above, which is crypto/live exchange
+    # drivers only - NSE/BSE data comes from the India archive layer, never live.
+    exchanges.NSE: NseProvider,
+    exchanges.BSE: BseProvider,
 }
 historical_provider_names = list(historical_provider_classes)
 

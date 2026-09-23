@@ -23,6 +23,17 @@ from pathlib import Path
 
 from .sessions import IST
 
+# Standard on-disk location for the default archive cache used by `bulk_import.
+# import_sessions` and the no-arg NSE/BSE exchange providers (`exchange_providers.py`,
+# story #9), under the calling project's storage directory (mirrors Jesse's existing
+# `storage/...` convention - see e.g. jesse/services/cache.py's `storage/temp/`).
+# Relative, like every other `storage/` path in this codebase: resolved against the
+# current working directory, which Jesse always runs from the project root. Lives here
+# (rather than in bulk_import.py, its original home) so `exchange_providers.py` can use
+# it without importing bulk_import, which itself imports `provider.py` - avoiding a
+# provider.py <-> bulk_import.py import cycle.
+DEFAULT_ARCHIVE_CACHE_DIR = 'storage/india-archives'
+
 # NSE/BSE occasionally re-publish or correct a bhavcopy/index file within a day or two
 # of the session (observed informally, not from a documented SLA) - a session younger
 # than this is always re-fetched from the network rather than trusted from cache, and
