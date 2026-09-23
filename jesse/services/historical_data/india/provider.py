@@ -10,6 +10,7 @@ from ..contracts import (
     HistoricalCandleProvider,
     HistoricalCandleRequest,
     ProviderCapabilities,
+    SymbolCatalogEntry,
 )
 from .sessions import next_session_row_timestamp, session_dates_in_range, session_row_timestamp
 from .sources import IndiaDailySource, create_source
@@ -33,16 +34,19 @@ class IndiaExchangeProvider(HistoricalCandleProvider):
     candles, so no India-specific replay/aggregation change is needed.
     """
 
-    capabilities = ProviderCapabilities(
-        native_timeframes=('1m',),
-        max_candles_per_request=INDIA_MAX_CANDLES_PER_REQUEST,
-    )
-
     def __init__(self, exchange: str, source: IndiaDailySource | None = None) -> None:
         self._source = source if source is not None else create_source(exchange)
         self.provider_id = exchange
         self.source_id = self._source.source_id
         self.prices_adjusted = self._source.prices_adjusted
+        # A per-instance attribute (not the shared class default) because ticker_search
+        # depends on whether *this* source overrides list_symbol_entries - two providers
+        # backed by different sources must not share one capabilities object.
+        self.capabilities = ProviderCapabilities(
+            native_timeframes=('1m',),
+            max_candles_per_request=INDIA_MAX_CANDLES_PER_REQUEST,
+            ticker_search=_has_symbol_catalog(self._source),
+        )
 
     def _fetch_candles(self, request: HistoricalCandleRequest) -> HistoricalCandleBatch:
         ticker = to_exchange_ticker(request.symbol)
@@ -84,3 +88,34 @@ class IndiaExchangeProvider(HistoricalCandleProvider):
             candles=tuple(candles),
             next_available_timestamp=next_available_timestamp,
         )
+
+    def list_symbol_entries(self) -> tuple[SymbolCatalogEntry, ...]:
+        return self._source.list_symbol_entries()
+
+    def list_symbols(self) -> tuple[str, ...]:
+        return tuple(entry.symbol for entry in self.list_symbol_entries())
+
+    def search_symbols(self, query: str, limit: int = 50) -> tuple[str, ...]:
+        normalized_query = query.strip().upper()
+        if not normalized_query:
+            return ()
+
+        prefix_matches: list[str] = []
+        other_matches: list[str] = []
+        for entry in self.list_symbol_entries():
+            symbol = entry.symbol.upper()
+            name = (entry.name or '').upper()
+            if normalized_query not in symbol and normalized_query not in name:
+                continue
+            # A symbol-prefix match (e.g. "TCS" for query "TCS") is what a user typing a
+            # ticker is almost always looking for, so it outranks a mid-string/name hit.
+            (prefix_matches if symbol.startswith(normalized_query) else other_matches).append(entry.symbol)
+
+        return tuple((prefix_matches + other_matches)[:limit])
+
+
+def _has_symbol_catalog(source: IndiaDailySource) -> bool:
+    # `IndiaDailySource.list_symbol_entries` is the shared "not supported" default (it
+    # raises ProviderCapabilityError); a source only offers ticker search when its own
+    # class overrides that method with a real implementation.
+    return type(source).list_symbol_entries is not IndiaDailySource.list_symbol_entries
