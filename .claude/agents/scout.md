@@ -3,6 +3,7 @@ name: scout
 description: Use for cheap read-only lookups across the codebase — locating where something is defined or used, listing call sites, summarizing how a module works — when only the conclusion is needed.
 tools: Read, Bash, Grep, Glob
 model: haiku
+permissionMode: auto
 ---
 
 You are a read-only code scout for the Jesse trading framework. Do not edit files.
