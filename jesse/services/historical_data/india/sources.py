@@ -59,6 +59,18 @@ class IndiaDailySource(ABC):
         """
         return False
 
+    def isin_for(self, ticker: str) -> str | None:
+        """ISIN for `ticker`, when this source can determine one; else None.
+
+        Story #7 (split/bonus adjustment) uses this to look up a security's ISIN so it
+        can index into `CorporateActionsStore` (NSE's corporate-actions API is keyed by
+        ISIN, not ticker - see corporate_actions.py). Defaults to None: a source without
+        its own security master (or one that hasn't implemented this) simply can't
+        answer, and #7 treats that the same as "no known corporate actions" (unadjusted,
+        with a warning) rather than guessing.
+        """
+        return None
+
 
 class ArchiveDailySource(IndiaDailySource):
     """Base for sources that publish one whole-market file per session (bhavcopy-style)."""

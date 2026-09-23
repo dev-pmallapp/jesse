@@ -116,6 +116,14 @@ class NseCompositeSource(IndiaDailySource):
     def is_index(self, ticker: str) -> bool:
         return self._classify(ticker) == 'index'
 
+    def isin_for(self, ticker: str) -> str | None:
+        # An index has no ISIN of its own to adjust by (story #7 never adjusts index
+        # prices anyway - see IndiaDailySource.is_index) - only the security path has
+        # one to look up.
+        if self._classify(ticker) == 'index':
+            return None
+        return self._bhavcopy_source.isin_for(ticker)
+
     def _classify(self, ticker: str) -> _Classification:
         """The single security-vs-index decision every routing/catalog/is_index call
         goes through, in order:

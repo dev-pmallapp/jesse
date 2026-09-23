@@ -193,6 +193,25 @@ class BseBhavcopySource(ArchiveDailySource):
 
         return tuple(entries)
 
+    def isin_for(self, ticker: str) -> str | None:
+        """ISIN for `ticker` from the same "most recent UDiFF file" rows the symbol
+        catalog and legacy scrip-code map already cache (`_cached_recent_udiff_rows`) -
+        no separate fetch/cache needed. Story #7 uses this for split/bonus adjustment
+        (see IndiaDailySource.isin_for). Returns None when that file couldn't be found,
+        or `ticker` isn't in it (e.g. long delisted) - never raises.
+        """
+        rows = self._cached_recent_udiff_rows()
+        if rows is None:
+            return None
+        normalized = ticker.strip().upper()
+        for row in rows:
+            if field(row, 'Sgmt') != 'CM' or field(row, 'FinInstrmTp') != 'STK':
+                continue
+            if field(row, 'TckrSymb').upper() == normalized:
+                isin = field(row, 'ISIN').strip().upper()
+                return isin or None
+        return None
+
     def _parse_udiff_payload(self, payload: bytes, session: date) -> dict[str, DailyBar]:
         text = decode_csv_bytes(payload, label='BSE bhavcopy')
         fieldnames, rows = read_csv_rows_from_text(text)
