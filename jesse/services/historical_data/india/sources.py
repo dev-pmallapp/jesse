@@ -11,8 +11,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 
+import jesse.helpers as jh
+
 from ..contracts import SymbolCatalogEntry
 from ..errors import ProviderCapabilityError, ProviderNotRegisteredError, ProviderRegistrationError
+from .archive_cache import MISSING, ArchiveFileCache
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +74,19 @@ class IndiaDailySource(ABC):
         """
         return None
 
+    def fetch_session_bars(self, session: date) -> Mapping[str, DailyBar] | None:
+        """Bulk (story #8) counterpart to `fetch_daily_bars`: every ticker's bar for
+        one whole-market session in a single call, used by `import_sessions`
+        (bulk_import.py) which needs a whole session at once rather than one ticker at
+        a time. `ArchiveDailySource` (below) implements this directly as its own
+        `fetch_session`; `NseCompositeSource` (nse_composite.py) overrides it to merge
+        its two constituent sources' sessions. No other `IndiaDailySource` subclass
+        exists yet, so there is no default implementation here.
+        """
+        raise ProviderCapabilityError(
+            f'India source {self.source_id!r} does not support bulk session import'
+        )
+
 
 class ArchiveDailySource(IndiaDailySource):
     """Base for sources that publish one whole-market file per session (bhavcopy-style)."""
@@ -80,8 +96,13 @@ class ArchiveDailySource(IndiaDailySource):
     # A handful of sessions is enough since imports fetch dates in order.
     _SESSION_CACHE_SIZE = 8
 
-    def __init__(self) -> None:
+    def __init__(self, *, cache: ArchiveFileCache | None = None) -> None:
         self._session_cache: 'OrderedDict[date, Mapping[str, DailyBar] | None]' = OrderedDict()
+        # Optional on-disk raw-payload cache (story #8, archive_cache.py). None (the
+        # default) means every fetch goes straight to the network exactly as it did
+        # before this cache existed - every pre-existing caller/test that constructs a
+        # source without a `cache=` argument is unaffected.
+        self._cache = cache
 
     @abstractmethod
     def fetch_session(self, session: date) -> Mapping[str, DailyBar] | None:
@@ -90,6 +111,60 @@ class ArchiveDailySource(IndiaDailySource):
         Returns None when the file was not published for that date (e.g. a holiday),
         never an exception - a missing file is an expected, routine outcome here.
         """
+
+    def fetch_session_bars(self, session: date) -> Mapping[str, DailyBar] | None:
+        # A plain archive source already fetches one whole-market file per session -
+        # `fetch_session` itself IS the bulk path, nothing further to merge.
+        return self.fetch_session(session)
+
+    def _fetch_and_parse(
+        self,
+        url: str,
+        *,
+        kind: str,
+        session: date,
+        expect: str,
+        client,
+        parse,
+    ) -> Mapping[str, DailyBar] | None:
+        """Fetch `url`'s raw payload (transparently serving/populating the on-disk
+        cache keyed by `(self.source_id, kind, session)` when one is configured - see
+        archive_cache.py) and hand it to `parse`.
+
+        A payload read FROM the cache that fails to parse is treated as a corrupt disk
+        entry: it is dropped and re-fetched from the network exactly once (a payload
+        that was fetched fresh in this same call and still fails to parse is a genuine
+        schema error and is left to propagate normally, never silently retried).
+        """
+        from_cache = False
+        if self._cache is None:
+            payload = client.get(url, expect=expect)
+        else:
+            cached = self._cache.get(self.source_id, kind, session)
+            if cached is not MISSING:
+                payload = cached
+                from_cache = True
+            else:
+                payload = client.get(url, expect=expect)
+                self._cache.put(self.source_id, kind, session, payload)
+
+        if payload is None:
+            return None
+        try:
+            return parse(payload)
+        except Exception as exc:
+            if not from_cache:
+                raise
+            jh.debug(
+                f'{self.source_id}: cached {kind!r} payload for {session} failed to parse ({exc!r}); '
+                'discarding it and refetching from network once'
+            )
+            self._cache.invalidate(self.source_id, kind, session)
+            payload = client.get(url, expect=expect)
+            self._cache.put(self.source_id, kind, session, payload)
+            if payload is None:
+                return None
+            return parse(payload)
 
     def fetch_daily_bars(self, ticker: str, sessions: list[date]) -> list[DailyBar]:
         bars = []
@@ -139,7 +214,14 @@ def available_sources(exchange: str) -> tuple[str, ...]:
     return tuple(_registered_sources.get(exchange, {}))
 
 
-def create_source(exchange: str, source_id: str | None = None) -> IndiaDailySource:
+def create_source(
+    exchange: str, source_id: str | None = None, *, cache: ArchiveFileCache | None = None,
+) -> IndiaDailySource:
+    """Instantiate a registered source. `cache` (story #8's on-disk archive cache) is
+    forwarded as a `cache=` keyword only when given - every registered source class
+    accepts it (defaulting to None, i.e. no caching), so this stays a plain no-arg
+    construction for every existing caller that doesn't pass one.
+    """
     exchange_sources = _registered_sources.get(exchange)
     if not exchange_sources:
         raise ProviderNotRegisteredError(f'No India data sources are registered for exchange {exchange!r}')
@@ -149,4 +231,6 @@ def create_source(exchange: str, source_id: str | None = None) -> IndiaDailySour
     source_cls = exchange_sources.get(resolved_id)
     if source_cls is None:
         raise ProviderNotRegisteredError(f'India source {resolved_id!r} is not registered for exchange {exchange!r}')
+    if cache is not None:
+        return source_cls(cache=cache)
     return source_cls()

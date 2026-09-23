@@ -1,3 +1,4 @@
+from .archive_cache import ArchiveFileCache
 from .http import IndiaHttpClient
 from .provider import IndiaExchangeProvider
 from .sessions import IST, next_session_row_timestamp, session_date, session_dates_in_range, session_row_timestamp
@@ -15,6 +16,7 @@ from . import bse_archives, nse_archives, nse_composite, nse_indices  # noqa: F4
 
 __all__ = [
     'ArchiveDailySource',
+    'ArchiveFileCache',
     'DailyBar',
     'IndiaDailySource',
     'IndiaExchangeProvider',

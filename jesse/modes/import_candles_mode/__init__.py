@@ -113,6 +113,32 @@ def _raise_if_cancelled(client_id: str, running_via_dashboard: bool) -> None:
         raise exceptions.Termination
 
 
+def _record_india_adjustment_state(exchange: str, symbol: str, provider) -> None:
+    """After a successful import, record the corporate-action signature this symbol's
+    freshly-stored history was just adjusted against (story #8) - lets a later
+    `refresh_adjustments` call (jesse/services/historical_data/india/adjustment_state.py)
+    detect a split/bonus announced AFTER this point and re-import the symbol, instead of
+    leaving it silently stale (see provider.py's "adjusted only as of import time"
+    caveat). A no-op for every non-India provider - crypto imports are untouched, and
+    the India-only modules are imported lazily so importing this module never pulls
+    them in for a crypto-only install.
+
+    This is pure bookkeeping for a LATER re-adjustment run, never the reason the
+    current import itself succeeded or failed - so any exception here (a transient DB
+    hiccup, the corporate-actions API being briefly unavailable while computing the
+    signature, ...) is caught and logged rather than allowed to turn an otherwise-
+    successful candle import into a reported failure.
+    """
+    try:
+        from jesse.services.historical_data.india.provider import IndiaExchangeProvider
+        if not isinstance(provider, IndiaExchangeProvider):
+            return
+        from jesse.services.historical_data.india.adjustment_state import record_adjustment_state
+        record_adjustment_state(exchange, symbol, provider.adjustment_signature(symbol))
+    except Exception as exc:
+        jh.debug(f'India adjustment-state hook failed for {symbol!r} on {exchange!r}: {exc!r}')
+
+
 def _print_import_progressbar(exchange: str, symbol: str, percent: float, remaining_seconds: float,
                               reached_date: str) -> None:
     """
@@ -464,6 +490,8 @@ def _run(
         'processed_candles': processed_candles,
         'message': success_text,
     }
+
+    _record_india_adjustment_state(exchange, symbol, provider)
 
     _raise_if_cancelled(client_id, running_via_dashboard)
 

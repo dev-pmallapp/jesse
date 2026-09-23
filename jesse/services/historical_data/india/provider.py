@@ -1,21 +1,24 @@
 """Bridges a pluggable `IndiaDailySource` (NSE/BSE archive or broker) into Jesse's
 generic `HistoricalCandleProvider` contract, per D1/D3 in docs/india-markets/PLAN.md.
 
-Not registered anywhere yet: exchange registration (`jesse/info.py`,
-`jesse/modes/import_candles_mode/drivers/__init__.py`) is stories #8/#9.
+Not registered as a Jesse exchange yet: exchange registration (`jesse/info.py`,
+`jesse/modes/import_candles_mode/drivers/__init__.py`) is story #9.
 
 Split/bonus adjustment (story #7, D7): a source's raw bars are, by construction, never
 retroactively adjusted for a later corporate action (see every `IndiaDailySource`
 subclass's `prices_adjusted` docstring) - so when a request asks for
-`AdjustmentMode.SPLIT_ADJUSTED`, `_fetch_candles` multiplies each pre-ex-date bar's
+`AdjustmentMode.SPLIT_ADJUSTED`, `_bars_to_candles` multiplies each pre-ex-date bar's
 O/H/L/C by the security's cumulative split/bonus factor (and divides its volume by the
 same factor) itself, using `CorporateActionsStore`. Adjustment is applied ONLY as of
 import time: if a symbol's history was already imported and a new split/bonus is
-announced afterwards, its already-stored bars are not retroactively touched - only a
-fresh fetch (a re-import) picks up the new factor. Detecting a stale import and
-triggering re-adjustment is out of scope here; it belongs to story #8 (daily
-storage/importer), which should read this note.
+announced afterwards, its already-stored bars are not retroactively touched by this
+module alone - `adjustment_signature` (below) is what story #8's
+`adjustment_state.refresh_adjustments` uses to detect that a symbol's known actions
+have changed since its last import and re-import it.
 """
+import hashlib
+from collections.abc import Sequence
+from datetime import date
 from threading import Lock
 
 import jesse.helpers as jh
@@ -29,11 +32,20 @@ from ..contracts import (
     ProviderCapabilities,
     SymbolCatalogEntry,
 )
+from .archive_cache import ArchiveFileCache
 from .corporate_actions import CorporateActionsStore
 from .nse_archives import NseBhavcopySource
 from .sessions import next_session_row_timestamp, session_dates_in_range, session_row_timestamp
-from .sources import IndiaDailySource, create_source
+from .sources import DailyBar, IndiaDailySource, create_source
 from .symbols import to_exchange_ticker
+
+# `adjustment_signature` (story #8) returns this fixed marker - instead of a sha256
+# digest of actual actions - for a symbol that is never adjusted at all (an index, or a
+# source whose prices already come pre-adjusted): there is nothing to fingerprint, and
+# this value can never collide with a real digest, so "permanently unadjusted" is never
+# confused with "adjusted against zero currently-known actions" (an empty action list
+# still hashes to a real, if unremarkable, digest).
+UNADJUSTED_SIGNATURE_MARKER = 'unadjusted'
 
 # Split/bonus factors are frequently non-terminating fractions (e.g. a 3:1 bonus is
 # exactly 0.25, but a 5:2 bonus is 2/7 = 0.2857...); NSE/BSE prices themselves never
@@ -102,8 +114,12 @@ class IndiaExchangeProvider(HistoricalCandleProvider):
         *,
         corporate_actions_store: CorporateActionsStore | None = None,
         nse_symbol_master: NseBhavcopySource | None = None,
+        cache: ArchiveFileCache | None = None,
     ) -> None:
-        self._source = source if source is not None else create_source(exchange)
+        # `cache` (story #8's on-disk archive cache) is forwarded to `create_source`
+        # only when this provider builds its own default source - an explicitly
+        # injected `source` is trusted to already be wired however its caller wanted.
+        self._source = source if source is not None else create_source(exchange, cache=cache)
         self.provider_id = exchange
         self.source_id = self._source.source_id
         self.prices_adjusted = self._source.prices_adjusted
@@ -145,19 +161,99 @@ class IndiaExchangeProvider(HistoricalCandleProvider):
         sessions = session_dates_in_range(request.requested_range)
         bars = self._source.fetch_daily_bars(ticker, sessions)
 
-        isin, nse_symbol, apply_adjustment = self._resolve_adjustment(request, ticker)
+        candles = [
+            candle
+            for candle in self._bars_to_candles(request.symbol, ticker, bars, request.adjustment_mode)
+            if (
+                request.requested_range.start_timestamp
+                <= candle.timestamp
+                < request.requested_range.end_timestamp
+            )
+            # Defensive: only sessions inside the requested range should ever reach
+            # here, but a source must never be trusted to have respected that itself.
+        ]
+
+        next_available_timestamp = None
+        if not candles:
+            # No bar landed in range (e.g. an all-weekend range, or every session in it
+            # was a holiday); point the caller at the next weekday session row instead
+            # of leaving them to guess where to resume.
+            next_available_timestamp = next_session_row_timestamp(request.requested_range.end_timestamp)
+
+        return HistoricalCandleBatch(
+            request=request,
+            candles=tuple(candles),
+            next_available_timestamp=next_available_timestamp,
+        )
+
+    def adjusted_candles_for_ticker(
+        self, symbol: str, ticker: str, bars: Sequence[DailyBar],
+    ) -> list[HistoricalCandle]:
+        """Bulk (story #8) counterpart to `fetch_candles`: turn bars a caller already
+        has in hand (from `fetch_session_bars`, one whole session at a time) into
+        adjusted candles, without a second round-trip through `_source.fetch_daily_bars`.
+        Always uses this provider's `default_adjustment_mode` (mirrors what a single-
+        symbol `fetch_candles` request would use by default) - `import_sessions`
+        (bulk_import.py) is this method's only caller today.
+        """
+        return self._bars_to_candles(symbol, ticker, bars, self.capabilities.default_adjustment_mode)
+
+    def adjustment_signature(self, symbol: str) -> str:
+        """Fingerprint of the corporate actions currently known for `symbol` - story
+        #8's `adjustment_state.refresh_adjustments` compares this against the signature
+        recorded at import time to detect a split/bonus that was announced (or only
+        became parseable) AFTER a symbol's history was already imported, and re-imports
+        only the symbols whose signature has actually changed.
+
+        Returns `UNADJUSTED_SIGNATURE_MARKER` when this symbol is never adjusted (an
+        index, a source whose prices already come pre-adjusted, or a security whose
+        ISIN/NSE symbol can't currently be resolved) - the exact same eligibility this
+        provider's own adjustment math (`_resolve_adjustment`) uses, so a signature can
+        never disagree with what was actually applied at import time. An unparsed
+        corporate action is deliberately folded into the marker path too: `factor_before`
+        is refused for such a symbol the same way it is for an unresolved identity (see
+        `_resolve_adjustment`), so there is nothing usable to fingerprint either way.
+        """
+        ticker = to_exchange_ticker(symbol)
+        isin, nse_symbol, apply_adjustment = self._resolve_adjustment(
+            self.capabilities.default_adjustment_mode, symbol, ticker,
+        )
+        if not apply_adjustment:
+            return UNADJUSTED_SIGNATURE_MARKER
+
+        actions = self._corporate_actions_store.actions_for(isin, nse_symbol)
+        # Sorted + deduped (a set of tuples) so the signature is order-independent and
+        # stable across otherwise-equivalent re-fetches (e.g. CorporateActionsStore's
+        # own dedup already collapses exact repeats, but the union order across
+        # ISIN/symbol keys is not itself guaranteed - see its `actions_for` docstring).
+        fingerprint = sorted(
+            {(action.ex_date.isoformat(), action.kind, round(action.price_factor, 10)) for action in actions}
+        )
+        return hashlib.sha256(repr(fingerprint).encode()).hexdigest()
+
+    def fetch_session_bars(self, session: date) -> dict[str, DailyBar] | None:
+        """Bulk (story #8) counterpart to `fetch_candles`: every ticker's raw
+        (unadjusted) bar for one whole-market session, keyed by exchange ticker -
+        delegates to the underlying source's own `fetch_session_bars` (see
+        `ArchiveDailySource`/`NseCompositeSource`). Used by `import_sessions`
+        (bulk_import.py), which needs a whole session at once rather than one ticker at
+        a time.
+        """
+        return self._source.fetch_session_bars(session)
+
+    def _bars_to_candles(
+        self, symbol: str, ticker: str, bars: Sequence[DailyBar], adjustment_mode: AdjustmentMode,
+    ) -> list[HistoricalCandle]:
+        """Shared math behind `_fetch_candles` and `adjusted_candles_for_ticker`: turn
+        raw `bars` into one `HistoricalCandle` per bar, applying split/bonus adjustment
+        (D7) when `adjustment_mode` and this symbol's identity/known-actions state both
+        allow it (see `_resolve_adjustment`).
+        """
+        isin, nse_symbol, apply_adjustment = self._resolve_adjustment(adjustment_mode, symbol, ticker)
 
         candles = []
         for bar in bars:
             timestamp = session_row_timestamp(bar.session)
-            if not (
-                request.requested_range.start_timestamp
-                <= timestamp
-                < request.requested_range.end_timestamp
-            ):
-                # Defensive: only sessions inside the requested range should ever reach
-                # here, but a source must never be trusted to have respected that itself.
-                continue
             open_price, high_price, low_price, close_price, volume = (
                 bar.open, bar.high, bar.low, bar.close, bar.volume,
             )
@@ -179,24 +275,12 @@ class IndiaExchangeProvider(HistoricalCandleProvider):
                 )
             )
         candles.sort(key=lambda candle: candle.timestamp)
-
-        next_available_timestamp = None
-        if not candles:
-            # No bar landed in range (e.g. an all-weekend range, or every session in it
-            # was a holiday); point the caller at the next weekday session row instead
-            # of leaving them to guess where to resume.
-            next_available_timestamp = next_session_row_timestamp(request.requested_range.end_timestamp)
-
-        return HistoricalCandleBatch(
-            request=request,
-            candles=tuple(candles),
-            next_available_timestamp=next_available_timestamp,
-        )
+        return candles
 
     def _resolve_adjustment(
-        self, request: HistoricalCandleRequest, ticker: str,
+        self, adjustment_mode: AdjustmentMode, symbol: str, ticker: str,
     ) -> tuple[str | None, str | None, bool]:
-        """Whether `_fetch_candles` should split/bonus-adjust this request's bars, and
+        """Whether `_bars_to_candles` should split/bonus-adjust `symbol`'s bars, and
         the (ISIN, NSE symbol) key pair to adjust them against - `CorporateActionsStore`
         matches on the union of both (see its docstring for why one key alone is not
         reliable: an ISIN can be reissued when a security's face value changes).
@@ -209,27 +293,27 @@ class IndiaExchangeProvider(HistoricalCandleProvider):
         adjustment is refused (unadjusted bars, logged via `_warn_unadjusted`) rather
         than silently guessing.
         """
-        if request.adjustment_mode is not AdjustmentMode.SPLIT_ADJUSTED:
+        if adjustment_mode is not AdjustmentMode.SPLIT_ADJUSTED:
             return None, None, False
         if self._source.is_index(ticker):
             return None, None, False
 
-        # This call is a genuine adjustment-resolution attempt for `request.symbol` -
-        # reset its warnings so `adjustment_warnings` reflects only this fetch, never a
-        # stale one from an earlier call whose underlying problem may since have
-        # resolved itself (fix D).
-        self._adjustment_warnings[request.symbol] = []
+        # This call is a genuine adjustment-resolution attempt for `symbol` - reset its
+        # warnings so `adjustment_warnings` reflects only this fetch, never a stale one
+        # from an earlier call whose underlying problem may since have resolved itself
+        # (fix D).
+        self._adjustment_warnings[symbol] = []
 
         isin = self._source.isin_for(ticker)
         nse_symbol = self._resolve_nse_symbol(ticker, isin)
         if isin is None and nse_symbol is None:
-            self._warn_unadjusted(request.symbol, 'unknown to NSE corporate actions (no ISIN or matching NSE symbol)')
+            self._warn_unadjusted(symbol, 'unknown to NSE corporate actions (no ISIN or matching NSE symbol)')
             return None, None, False
 
         unparsed_subjects = self._corporate_actions_store.unparsed_for(isin, nse_symbol)
         if unparsed_subjects:
             self._warn_unadjusted(
-                request.symbol, f'unparsed corporate-action subject(s) for {isin or nse_symbol}: {unparsed_subjects}'
+                symbol, f'unparsed corporate-action subject(s) for {isin or nse_symbol}: {unparsed_subjects}'
             )
             return None, None, False
 
