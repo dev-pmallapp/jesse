@@ -15,16 +15,9 @@ from jesse.models.IndiaAdjustmentState import IndiaAdjustmentState
 from jesse.repositories import candle_repository
 from jesse.services.db import database
 
-from .archive_cache import ArchiveFileCache
+from .archive_cache import DEFAULT_ARCHIVE_CACHE_DIR, ArchiveFileCache
 from .provider import IndiaExchangeProvider
 from .symbols import to_exchange_ticker
-
-# Standard on-disk location for the archive cache every India provider this module
-# builds by default is wired against (mirrors bulk_import.DEFAULT_ARCHIVE_CACHE_DIR) -
-# duplicated as a plain string constant rather than imported, to avoid a module-load-
-# time cycle with bulk_import.py (which imports this module).
-_DEFAULT_ARCHIVE_CACHE_DIR = 'storage/india-archives'
-
 
 @dataclass
 class RefreshAdjustmentsResult:
@@ -89,7 +82,7 @@ def refresh_adjustments(
     from .bulk_import import _build_range
 
     if provider is None:
-        provider = IndiaExchangeProvider(exchange, cache=ArchiveFileCache(_DEFAULT_ARCHIVE_CACHE_DIR))
+        provider = IndiaExchangeProvider(exchange, cache=ArchiveFileCache(DEFAULT_ARCHIVE_CACHE_DIR))
 
     stored_symbols = candle_repository.get_stored_symbols(exchange)
     if symbols is not None:

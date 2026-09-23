@@ -25,14 +25,16 @@ from jesse.modes.import_candles_mode.drivers.Kraken.KrakenSpot import KrakenSpot
 from jesse.modes.import_candles_mode.drivers.Kraken.KrakenPerpetual import KrakenPerpetual
 from jesse.modes.import_candles_mode.drivers.Kraken.KrakenPerpetualTestnet import KrakenPerpetualTestnet
 from jesse.services.historical_data import (
-    BseProvider,
     HistoricalCandleProviderRegistry,
     MassiveCurrenciesProvider,
     MassiveFuturesProvider,
     MassiveIndicesProvider,
     MassiveStocksProvider,
-    NseProvider,
 )
+# Imported from the India package directly rather than re-exported by
+# jesse.services.historical_data: that package loads on every `import jesse`, while this
+# drivers module only loads when importing candles, so crypto-only processes skip India.
+from jesse.services.historical_data.india import BseProvider, NseProvider
 
 
 drivers = {
