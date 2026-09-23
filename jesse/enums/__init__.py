@@ -70,6 +70,11 @@ class exchanges:
     MASSIVE_CURRENCIES = 'Massive Currencies'
     MASSIVE_INDICES = 'Massive Indices'
     MASSIVE_FUTURES = 'Massive Futures'
+    # Values MUST stay exactly 'NSE'/'BSE' - the India source registry
+    # (historical_data/india/sources.py `create_source`) and `IndiaExchangeProvider`
+    # key their source lookup on these exact strings.
+    NSE = 'NSE'
+    BSE = 'BSE'
     COINBASE_SPOT = 'Coinbase Spot'
     BITFINEX_SPOT = 'Bitfinex Spot'
     BINANCE_SPOT = 'Binance Spot'

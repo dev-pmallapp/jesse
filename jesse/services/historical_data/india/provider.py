@@ -1,8 +1,10 @@
 """Bridges a pluggable `IndiaDailySource` (NSE/BSE archive or broker) into Jesse's
 generic `HistoricalCandleProvider` contract, per D1/D3 in docs/india-markets/PLAN.md.
 
-Not registered as a Jesse exchange yet: exchange registration (`jesse/info.py`,
-`jesse/modes/import_candles_mode/drivers/__init__.py`) is story #9.
+Registered as the `NSE`/`BSE` Jesse exchanges (story #9) via the no-arg
+`NseProvider`/`BseProvider` subclasses in `exchange_providers.py` - see
+`jesse/info.py`'s `exchange_info` and
+`jesse/modes/import_candles_mode/drivers/__init__.py`'s `historical_provider_classes`.
 
 Split/bonus adjustment (story #7, D7): a source's raw bars are, by construction, never
 retroactively adjusted for a later corporate action (see every `IndiaDailySource`

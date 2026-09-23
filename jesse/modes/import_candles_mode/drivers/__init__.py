@@ -31,6 +31,10 @@ from jesse.services.historical_data import (
     MassiveIndicesProvider,
     MassiveStocksProvider,
 )
+# Imported from the India package directly rather than re-exported by
+# jesse.services.historical_data: that package loads on every `import jesse`, while this
+# drivers module only loads when importing candles, so crypto-only processes skip India.
+from jesse.services.historical_data.india import BseProvider, NseProvider
 
 
 drivers = {
@@ -71,6 +75,10 @@ historical_provider_classes = {
     exchanges.MASSIVE_CURRENCIES: MassiveCurrenciesProvider,
     exchanges.MASSIVE_INDICES: MassiveIndicesProvider,
     exchanges.MASSIVE_FUTURES: MassiveFuturesProvider,
+    # Backtest-only (story #9): not in `drivers` above, which is crypto/live exchange
+    # drivers only - NSE/BSE data comes from the India archive layer, never live.
+    exchanges.NSE: NseProvider,
+    exchanges.BSE: BseProvider,
 }
 historical_provider_names = list(historical_provider_classes)
 

@@ -476,6 +476,6 @@ def _default_today() -> date:
 # Registered as the default BSE source as soon as this module is imported -
 # `jesse/services/historical_data/india/__init__.py` imports this module for that side
 # effect, so `IndiaExchangeProvider('BSE')` works with no explicit source argument.
-# Exchange registration into jesse's own info/drivers layer is a separate later story
-# (#9), not this one.
+# Exchange registration into jesse's own info/drivers layer (story #9) is separate -
+# see exchange_providers.py.
 register_source(BseBhavcopySource, default=True)
