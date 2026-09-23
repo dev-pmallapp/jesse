@@ -11,6 +11,67 @@ Before starting a task, scan the YAML frontmatter of every `.claude/skills/*/SKI
 
 - **`jesse-strategy-tests`** — conventions for writing Jesse strategy and engine tests.
 
+## Model Roles (Claude Code)
+
+This project splits work by model. The main session runs on **Opus** and acts as
+**orchestrator and designer only**; hands-on work is delegated to project subagents in
+`.claude/agents/`, whose `model:` frontmatter pins them to Sonnet or Haiku.
+
+**Opus (main session) owns:** understanding the request, reading enough code to design the
+change, making architecture/API/data-model decisions, splitting work into concrete specs,
+dispatching subagents, integrating and sanity-checking their results, and committing.
+
+**Delegate everything else:**
+
+| Agent | Model | Use for |
+|-------|-------|---------|
+| `implementer` | Sonnet | Writing/editing source code to a concrete spec |
+| `tester` | Sonnet | Writing tests, running `pytest` / Pyrefly, reporting results |
+| `reviewer` | Sonnet | Read-only review of a diff before committing |
+| `doc-writer` | Haiku | Docstrings, README/AGENTS.md/skill docs, release notes |
+| `scout` | Haiku | Cheap read-only lookups (where is X defined/used) |
+
+Rules:
+- Give each subagent a self-contained spec: files, functions, expected behavior, edge
+  cases, and which tests to run. Subagents start cold — do not assume they share context.
+- Default flow for a code change: design → `implementer` → `tester` → `reviewer` →
+  fix-ups via `implementer` → `doc-writer` if docs are affected → Opus commits.
+- Do not spawn built-in `general-purpose`/`Explore`/`Plan` agents for these roles — they
+  inherit Opus. If a built-in agent is unavoidable, pass `model: "sonnet"` or
+  `model: "haiku"` explicitly.
+- Opus may make trivial edits itself (a typo, a one-line config tweak) when dispatching
+  would cost more than doing it; anything beyond that goes to a subagent.
+- Independent subtasks (e.g. implementer on module A, doc-writer on module B) can run in
+  parallel.
+
+## GitHub Workflow
+
+All development goes through branches and pull requests. `origin` is the fork
+`dev-pmallapp/jesse` (parent: `jesse-ai/jesse`). The main session (Opus) owns every git/`gh`
+step below; subagents never commit, push, or open PRs.
+
+1. **Never commit directly to `master`.** Start each task from an up-to-date master:
+   `git fetch origin && git switch -c <type>/<short-kebab-desc> origin/master`.
+   Branch types match existing branches: `feat/`, `fix/`, `chore/`, `refactor/`, `docs/`,
+   `perf/`, `test/`.
+2. **Commits** use Conventional Commits, as in the existing history:
+   `feat: …`, `fix: …`, `chore: …`, `refactor: …`, `docs(scope): …`. Commit at the end of
+   each logical step and stage only the files this task touched.
+3. **Before pushing**: `tester` has run the relevant `pytest` targets and `reviewer` has
+   reviewed the branch diff (`git diff origin/master...HEAD`); high/medium findings are
+   fixed or explicitly deferred.
+4. **Push and open a PR** against the fork's master:
+   `git push -u origin <branch>` then
+   `gh pr create --repo dev-pmallapp/jesse --base master` with a summary, the motivation,
+   the test commands run with their results, and any jesse-live / dashboard / jesse-rust
+   impact. Link the issue with `Closes #N` when there is one.
+5. **CI**: `.github/workflows/python-package.yml` runs on PRs to master (Linux/macOS/Windows,
+   Python 3.10–3.13). Check it with `gh pr checks --watch`; fix failures on the same branch.
+6. **Merging is the user's call.** Do not merge, force-push shared branches, delete remote
+   branches, or open PRs/issues against upstream `jesse-ai/jesse` unless explicitly asked.
+7. **Releases** (version tags) follow "Publishing the Docker Image" below and are only cut
+   on request, from master after the PR is merged.
+
 ## Key Characteristics
 
 ### Central Framework
