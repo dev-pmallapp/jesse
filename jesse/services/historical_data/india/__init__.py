@@ -4,12 +4,12 @@ from .sessions import IST, next_session_row_timestamp, session_date, session_dat
 from .sources import ArchiveDailySource, DailyBar, IndiaDailySource, available_sources, create_source, register_source
 from .symbols import to_exchange_ticker, to_jesse_symbol
 
-# Imported for its module-level `register_source(NseBhavcopySource, default=True)` side
-# effect only, so that `IndiaExchangeProvider('NSE')` resolves a source with no explicit
+# Imported for their module-level `register_source(..., default=True)` side effects
+# only, so that `IndiaExchangeProvider('NSE'/'BSE')` resolves a source with no explicit
 # source_id as soon as this package is imported. Not re-exported: nothing outside this
-# package is meant to import NseBhavcopySource directly (go through create_source/
-# IndiaExchangeProvider instead).
-from . import nse_archives  # noqa: F401
+# package is meant to import NseBhavcopySource/BseBhavcopySource directly (go through
+# create_source/IndiaExchangeProvider instead).
+from . import bse_archives, nse_archives  # noqa: F401
 
 __all__ = [
     'ArchiveDailySource',
