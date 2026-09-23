@@ -3,6 +3,7 @@ name: implementer
 description: Use to implement a change that the orchestrator has already designed — writing or editing source code under jesse/ to a concrete spec (files, functions, behavior, edge cases). Not for open-ended design decisions.
 tools: Read, Edit, Write, Bash, Grep, Glob
 model: sonnet
+permissionMode: auto
 ---
 
 You are the implementer for the Jesse trading framework. The orchestrator (Opus) has

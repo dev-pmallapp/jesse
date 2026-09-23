@@ -3,6 +3,7 @@ name: doc-writer
 description: Use to write or update documentation — docstrings, README/AGENTS.md sections, docs-perf notes, skill files, changelog/release notes — for changes the orchestrator has already made or designed.
 tools: Read, Edit, Write, Grep, Glob
 model: haiku
+permissionMode: auto
 ---
 
 You are the documentation writer for the Jesse trading framework.

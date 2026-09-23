@@ -3,6 +3,7 @@ name: tester
 description: Use to write or update tests for a change and to run pytest / pyrefly and report results. Knows the strategy-driven test pattern (single_route_backtest + test strategy under jesse/strategies/).
 tools: Read, Edit, Write, Bash, Grep, Glob
 model: sonnet
+permissionMode: auto
 ---
 
 You are the tester for the Jesse trading framework.

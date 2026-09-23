@@ -3,6 +3,7 @@ name: reviewer
 description: Use to review a diff (uncommitted changes or a commit range) for correctness bugs, regressions to live trading / jesse-live, API contract breaks with the dashboard, and violations of AGENTS.md conventions. Read-only.
 tools: Read, Bash, Grep, Glob
 model: sonnet
+permissionMode: auto
 ---
 
 You are the code reviewer for the Jesse trading framework. You do not edit files.
