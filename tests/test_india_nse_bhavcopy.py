@@ -22,6 +22,7 @@ from jesse.services.historical_data.india.nse_archives import (
     _EQUITY_MASTER_URL,
     _ETF_MASTER_URL,
     _UDIFF_REQUIRED_COLUMNS,
+    _expected_legacy_member_name,
     _legacy_url,
     _udiff_url,
 )
@@ -38,6 +39,14 @@ def _zip_bytes(text: str, filename: str = 'bhav.csv') -> bytes:
     with zipfile.ZipFile(buffer, 'w') as archive:
         archive.writestr(filename, text)
     return buffer.getvalue()
+
+
+def _legacy_zip_bytes(text: str, session: date) -> bytes:
+    """A legacy zip with a realistic member name (`check_archive_member_name` in
+    archive_parsing.py now rejects a mismatch), for tests that exercise the legacy path
+    successfully rather than deliberately testing that guard.
+    """
+    return _zip_bytes(text, filename=_expected_legacy_member_name(session))
 
 
 class FakeIndiaHttpClient:
@@ -86,7 +95,7 @@ def test_legacy_parses_2024_header_with_totaltrades_and_isin():
     session = date(2024, 1, 1)
     client = FakeIndiaHttpClient({
         _udiff_url(session): None,
-        _legacy_url(session): _zip_bytes(_read_fixture('nse_bhavcopy_legacy_20240101.csv')),
+        _legacy_url(session): _legacy_zip_bytes(_read_fixture('nse_bhavcopy_legacy_20240101.csv'), session),
     })
     source = NseBhavcopySource(client=client)
 
@@ -103,7 +112,7 @@ def test_legacy_parses_1995_header_missing_totaltrades_and_isin():
     session = date(1995, 1, 2)
     client = FakeIndiaHttpClient({
         _udiff_url(session): None,
-        _legacy_url(session): _zip_bytes(_read_fixture('nse_bhavcopy_legacy_19950102.csv')),
+        _legacy_url(session): _legacy_zip_bytes(_read_fixture('nse_bhavcopy_legacy_19950102.csv'), session),
     })
     source = NseBhavcopySource(client=client)
 
@@ -124,7 +133,7 @@ def test_udiff_tried_first_then_legacy_fallback_for_pre_switch_date():
     session = date(2024, 1, 1)
     client = FakeIndiaHttpClient({
         _udiff_url(session): None,  # simulate not (yet) backfilled for this test
-        _legacy_url(session): _zip_bytes(_read_fixture('nse_bhavcopy_legacy_20240101.csv')),
+        _legacy_url(session): _legacy_zip_bytes(_read_fixture('nse_bhavcopy_legacy_20240101.csv'), session),
     })
     source = NseBhavcopySource(client=client)
 
@@ -183,9 +192,9 @@ def test_allcargo_proof_gives_raw_unadjusted_closes_at_0959_utc():
     day2 = date(2024, 1, 2)
     client = FakeIndiaHttpClient({
         _udiff_url(day1): None,
-        _legacy_url(day1): _zip_bytes(_allcargo_proof_row_for('01-JAN-2024')),
+        _legacy_url(day1): _legacy_zip_bytes(_allcargo_proof_row_for('01-JAN-2024'), day1),
         _udiff_url(day2): None,
-        _legacy_url(day2): _zip_bytes(_allcargo_proof_row_for('02-JAN-2024')),
+        _legacy_url(day2): _legacy_zip_bytes(_allcargo_proof_row_for('02-JAN-2024'), day2),
     })
     provider = IndiaExchangeProvider('NSE', source=NseBhavcopySource(client=client))
     request = HistoricalCandleRequest(
@@ -210,7 +219,9 @@ def test_row_date_mismatch_raises_provider_schema_error():
     session = date(2024, 1, 2)  # fixture rows are all dated 01-JAN-2024
     client = FakeIndiaHttpClient({
         _udiff_url(session): None,
-        _legacy_url(session): _zip_bytes(_read_fixture('nse_bhavcopy_legacy_20240101.csv')),
+        # Member name matches the *requested* session (2024-01-02) - the mismatch this
+        # test targets is the row-level TIMESTAMP (01-JAN-2024), not the archive member.
+        _legacy_url(session): _legacy_zip_bytes(_read_fixture('nse_bhavcopy_legacy_20240101.csv'), session),
     })
     source = NseBhavcopySource(client=client)
 
@@ -222,10 +233,25 @@ def test_missing_required_column_raises_provider_schema_error():
     session = date(2024, 1, 1)
     # No SERIES column at all - a structural break, not a per-row problem.
     text = 'SYMBOL,OPEN,HIGH,LOW,CLOSE,TOTTRDQTY,TIMESTAMP\nFOO,10,11,9,10.5,100,01-JAN-2024\n'
-    client = FakeIndiaHttpClient({_udiff_url(session): None, _legacy_url(session): _zip_bytes(text)})
+    client = FakeIndiaHttpClient({_udiff_url(session): None, _legacy_url(session): _legacy_zip_bytes(text, session)})
     source = NseBhavcopySource(client=client)
 
     with pytest.raises(ProviderSchemaError, match='missing required column'):
+        source.fetch_session(session)
+
+
+def test_legacy_archive_member_name_mismatch_raises_provider_schema_error():
+    session = date(2024, 1, 1)
+    # Real content, but zipped under an unrelated member name - simulates a wrong-day
+    # file being served under this session's URL. This is the *only* per-file guard NSE
+    # has for the legacy format beyond the row-level TIMESTAMP check.
+    client = FakeIndiaHttpClient({
+        _udiff_url(session): None,
+        _legacy_url(session): _zip_bytes(_read_fixture('nse_bhavcopy_legacy_20240101.csv'), filename='cm02JAN2024bhav.csv'),
+    })
+    source = NseBhavcopySource(client=client)
+
+    with pytest.raises(ProviderSchemaError, match='does not match the expected'):
         source.fetch_session(session)
 
 
@@ -252,7 +278,7 @@ _SERIES_TEST_HEADER = 'SYMBOL,SERIES,OPEN,HIGH,LOW,CLOSE,TOTTRDQTY,TIMESTAMP'
 def _series_test_source(*rows: str) -> tuple[NseBhavcopySource, date]:
     session = date(2024, 1, 1)
     text = _SERIES_TEST_HEADER + '\n' + '\n'.join(rows) + '\n'
-    client = FakeIndiaHttpClient({_udiff_url(session): None, _legacy_url(session): _zip_bytes(text)})
+    client = FakeIndiaHttpClient({_udiff_url(session): None, _legacy_url(session): _legacy_zip_bytes(text, session)})
     return NseBhavcopySource(client=client), session
 
 
@@ -450,13 +476,27 @@ def test_non_utf8_archive_content_raises_provider_schema_error():
         source.fetch_session(session)
 
 
+def test_non_utf8_master_file_raises_provider_schema_error():
+    # A plain (non-zipped) master-file payload that isn't valid UTF-8 - exercises
+    # `read_csv_rows`'s use of the shared `decode_csv_bytes`, distinct from the zipped
+    # bhavcopy path covered by `test_non_utf8_archive_content_raises_provider_schema_error`.
+    client = FakeIndiaHttpClient({
+        _EQUITY_MASTER_URL: b'\xff\xfe\x00\x01not utf-8',
+        _ETF_MASTER_URL: b'Symbol,Underlying Asset,SecurityName,DateofListing,MarketLot,ISINNumber,FaceValue,ETF Underlying,Underlying Key\n',
+    })
+    source = NseBhavcopySource(client=client)
+
+    with pytest.raises(ProviderSchemaError, match='UTF-8'):
+        source.list_symbol_entries()
+
+
 def test_zip_with_directory_entry_plus_one_csv_parses_fine():
     session = date(2024, 1, 1)
     text = _SERIES_TEST_HEADER + '\nFOO,EQ,10,11,9,10.5,200,01-JAN-2024\n'
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, 'w') as archive:
         archive.writestr('folder/', '')  # a directory entry, not a second data file
-        archive.writestr('bhav.csv', text)
+        archive.writestr(_expected_legacy_member_name(session), text)
     client = FakeIndiaHttpClient({_udiff_url(session): None, _legacy_url(session): buffer.getvalue()})
     source = NseBhavcopySource(client=client)
 
