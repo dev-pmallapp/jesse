@@ -6,12 +6,13 @@ Tracking: dev-pmallapp/jesse#1 (epics #13, #18, #24, #28, #31, #38; one mileston
 
 ## Goal
 
-Research, screening and backtesting of Indian instruments for **swing trading**. No live
-trading (jesse-live is out of scope).
+Research, screening and backtesting of Indian instruments for **swing trading**, plus **paper
+trading** (simulated local portfolio, no broker orders, no real money). Real-money live trading
+and jesse-live are out of scope.
 
 In scope: NSE/BSE equities, ETFs, indices (incl. smart-beta such as NIFTY200 Alpha 30),
 mutual funds, corporate bonds (attribute screening), and fundamentals for screening.
-Out of scope: F&O / options, intraday product rules (MIS square-off), live broker adapters.
+Out of scope: F&O / options, intraday product rules (MIS square-off), broker order placement.
 
 ## Decisions
 
@@ -23,6 +24,7 @@ Out of scope: F&O / options, intraday product rules (MIS square-off), live broke
 | D4 | Mutual funds source | **AMFI NAV history** (official, free); NAV stored as a flat candle (O=H=L=C, volume 0) |
 | D5 | Fundamentals | Point-in-time store keyed by **filing date**. Default automated source: **NSE/BSE XBRL filings** (free). Paid vendors plug in behind a `FundamentalsProvider` interface |
 | D6 | Universes | **NSE index families only.** Verified Alpha indices: Nifty Alpha 50, NIFTY100 Alpha 30, Nifty200 Alpha 30 ("NIFTY500 Alpha 30" does not exist). No custom lists |
+| D8 | Paper trading | **End-of-day first**: replay the locked strategy from the portfolio start date after each session is published, and append new fills to a local INR ledger. Intraday paper trading on a broker market-data feed follows. No broker orders ever |
 | D7 | Price adjustment | Sources are interchangeable only if stored prices mean the same thing. Canonical form: **split/bonus-adjusted by Jesse** from NSE corporate-action data. Confirmed necessary: bhavcopy prices are never adjusted afterwards (spike #2). Sources that return pre-adjusted prices declare it and skip that step. Each dataset records its source |
 
 Why D3: the engine only backtests from 1m rows (`source_timeframe` / `native_timeframes` exist in
@@ -91,6 +93,28 @@ account, and backtest on 1D.
 4. Delivery (CNC) cost preset: STT, stamp duty, exchange txn charge, SEBI fee, GST, DP charge per
    sell, broker brokerage (per-broker preset). Rates carry effective dates. Requires a per-fill cost hook alongside the
    existing flat `fee_rate` (crypto exchanges keep the flat fee).
+
+### Phase 2b — End-of-day paper trading (epic #54)
+
+Starts after P1 and the delivery cost model (#17). No broker, no real money.
+
+1. Paper ledger tables: portfolio (strategy, symbols/universe, start date, INR capital, strategy
+   hash), fills, daily position snapshots, equity curve (#47).
+2. Portfolio lifecycle and **strategy locking**: code + hyperparameters are hashed at creation; a
+   later mismatch blocks the run instead of silently rewriting history (#48).
+3. **Daily replay runner**: import the newest session, re-run the backtest from the start date
+   (deterministic with fixed data and a locked strategy, and seconds on daily bars), append only
+   new fills. Idempotent per session; holidays are no-ops. Reuses the backtest engine unchanged,
+   so no in-memory engine state has to be persisted (#49).
+4. Report of tomorrow's pending orders, positions and P&L, as CLI and CSV (#50); evening scheduler
+   after NSE publishes (#51); optional notifications (#52).
+5. Determinism test: advancing day by day equals one backtest over the same range (#53).
+
+### Phase 2c — Intraday paper trading (epic #60)
+
+Real-time prices from a broker market-data feed (Upstox / Angel One, free with an account) behind
+a pluggable interface; an intraday paper engine loop that fills stops/targets against live
+prices, persists state across restarts, and never places real orders (#55–#59).
 
 ### Phase 3 — Fundamentals for screening
 
