@@ -92,6 +92,15 @@ class IndiaExchangeProvider(HistoricalCandleProvider):
     def list_symbol_entries(self) -> tuple[SymbolCatalogEntry, ...]:
         return self._source.list_symbol_entries()
 
+    def is_index(self, symbol: str) -> bool:
+        """Whether `symbol` (a Jesse symbol, e.g. `NIFTY-INR`) is an index rather than a
+        tradable security - delegates to the underlying source's `is_index` (see
+        `IndiaDailySource.is_index` for why that is the single authority story #7 uses).
+        May raise `ProviderUnavailableError` for a source (e.g. NseCompositeSource) that
+        cannot confidently classify the ticker right now - never silently guesses.
+        """
+        return self._source.is_index(to_exchange_ticker(symbol))
+
     def list_symbols(self) -> tuple[str, ...]:
         return tuple(entry.symbol for entry in self.list_symbol_entries())
 

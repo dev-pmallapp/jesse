@@ -278,9 +278,11 @@ def _parse_legacy_row(row: dict[str, str], session: date) -> tuple[str, str, Dai
     return build_bar(ticker, series, row_date, values['OPEN'], values['HIGH'], values['LOW'], values['CLOSE'], values['TOTTRDQTY'])
 
 
-# Registered as the default NSE source as soon as this module is imported -
-# `jesse/services/historical_data/india/__init__.py` imports this module for
-# that side effect, so `IndiaExchangeProvider('NSE')` works with no explicit
-# source argument. Exchange registration into jesse's own info/drivers layer
-# is a separate later story (#9), not this one.
-register_source(NseBhavcopySource, default=True)
+# Registered as a non-default NSE source: story #6 (nse_composite.py) registers
+# NseCompositeSource as NSE's default instead, so a bare `IndiaExchangeProvider('NSE')`
+# routes between this and NseIndexSource automatically. This module's own registration
+# stays (non-default) so bhavcopy can still be selected explicitly
+# (`create_source('NSE', 'nse_bhavcopy')`) when a caller wants stocks/ETFs only.
+# Exchange registration into jesse's own info/drivers layer is a separate later story
+# (#9), not this one.
+register_source(NseBhavcopySource)

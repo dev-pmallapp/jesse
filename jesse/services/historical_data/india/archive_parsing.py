@@ -174,8 +174,16 @@ def check_session_date(row_date: date, session: date, *, label: str) -> None:
 
 def build_bar(
     ticker: str, series: str, row_date: date, open_str: str, high_str: str, low_str: str, close_str: str,
-    volume_str: str,
+    volume_str: str, *, require_positive_volume: bool = True,
 ) -> tuple[str, str, DailyBar] | object:
+    """Build a `DailyBar` from string fields, applying the shared price/candle rules.
+
+    `require_positive_volume` defaults to True (NSE/BSE stock bhavcopy: no trades that
+    day means no bar - see the ROW_SKIPPED branch below). NSE's index file (story #6,
+    nse_indices.py) passes False: an index level is published even on a session where
+    NSE reports zero/blank turnover for it, so a zero-volume index row is still a real
+    bar, not a "no trading" row to drop.
+    """
     try:
         open_price, high_price, low_price, close_price, volume = (
             float(open_str), float(high_str), float(low_str), float(close_str), float(volume_str),
@@ -190,10 +198,14 @@ def build_bar(
         # validation doesn't check this (only finiteness/OHLC ordering), so it's
         # enforced explicitly here rather than assumed.
         return ROW_INVALID
-    if volume <= 0:
+    if require_positive_volume and volume <= 0:
         # No trades that day for this ticker means no bar, not a zero-volume bar -
         # routine and not worth counting alongside genuinely invalid rows.
         return ROW_SKIPPED
+    if volume < 0:
+        # Never legitimate regardless of require_positive_volume (a negative index
+        # "volume" figure is bad data, not a quiet trading day).
+        return ROW_INVALID
     try:
         # HistoricalCandle's own validation (finite numbers, OHLC ordering, etc.) is the
         # single source of truth for what a valid bar looks like; reuse it here instead
