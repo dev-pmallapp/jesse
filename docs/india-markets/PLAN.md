@@ -15,15 +15,17 @@ Out of scope: F&O / options, intraday product rules (MIS square-off), live broke
 
 | # | Decision | Choice |
 |---|----------|--------|
-| D1 | Primary market-data source | **Dhan API v2** (`/v2/charts/historical`, `/v2/charts/intraday`, scrip master for security IDs) |
+| D1 | Market-data sources | **Pluggable.** Default is free and account-less: official **NSE/BSE end-of-day archives** (bhavcopy + corporate actions) and **NIFTY index history**. Broker APIs plug in behind the same interface: free-with-account (Upstox, Angel One) and paid (Dhan, Kite). One source is selected per exchange in config |
 | D2 | Naming | **TradingView style** at the user surface: `NSE:RELIANCE`, `BSE:RELIANCE`, `NSE:NIFTY`, `AMFI:<scheme_code>`. Internally exchange=`NSE`, symbol=`RELIANCE-INR` so `jh.quote_asset()` and INR settlement work unchanged |
 | D3 | Bar resolution | **Daily-first.** One 1m row per session stamped at the session close carries the day's OHLCV; the existing sparse-market engine aggregates it to correct 1D/1W candles. Routes on these markets must be `>= 1D` (validated) |
 | D4 | Mutual funds source | **AMFI NAV history** (official, free); NAV stored as a flat candle (O=H=L=C, volume 0) |
-| D5 | Fundamentals | Point-in-time store keyed by **filing date**, not period end; CSV import first, automated source second (see Phase 3) |
+| D5 | Fundamentals | Point-in-time store keyed by **filing date**. Default automated source: **NSE/BSE XBRL filings** (free). Paid vendors plug in behind a `FundamentalsProvider` interface |
+| D6 | Universes | **NSE index families only**, e.g. NIFTY200 Alpha 30 and NIFTY100 Alpha 30. No custom lists |
+| D7 | Price adjustment | Sources are interchangeable only if stored prices mean the same thing. Canonical form: **split/bonus-adjusted by Jesse** from NSE corporate-action data. Sources that return pre-adjusted prices declare it and skip that step. Each dataset records its source |
 
 Why D3: the engine only backtests from 1m rows (`source_timeframe` / `native_timeframes` exist in
 `historical_data/contracts.py` but nothing consumes them). Minute history for a 500-stock universe
-is hundreds of millions of rows, Dhan intraday depth is limited, and MFs/bonds have no intraday
+is hundreds of millions of rows, the free sources are end-of-day only, and MFs/bonds have no intraday
 data. Swing strategies fill against daily high/low anyway. Native non-1m sources can come later.
 
 ## Existing groundwork to reuse
@@ -39,15 +41,19 @@ data. Swing strategies fill against daily high/low anyway. Native non-1m sources
 
 ## Phases
 
-### Phase 1 — NSE/BSE equities, ETFs, indices (data + backtest)
+### Phase 1 — NSE/BSE equities, ETFs, indices (free data + backtest)
 
-0. **Probe Dhan** (before any code): record real responses for historical daily/intraday and the
-   scrip master. Answer: are prices split/bonus adjusted? how far back does daily go? rate limits?
-   timestamp format/timezone? index and ETF coverage (e.g. NIFTY200 Alpha 30 and its ETFs)?
-   Recorded payloads become test fixtures.
-1. `jesse/services/historical_data/india/dhan.py` — `DhanProvider(HistoricalCandleProvider)`:
-   scrip-master cache (symbol → security ID, segment, instrument type), daily fetch, IST→UTC,
-   half-open ranges, credential loader (client ID + access token), pacing.
+0. **Probe the free sources** (before any code): NSE equity bhavcopy (old format and the UDiFF
+   format NSE switched to in 2024), BSE bhavcopy, NSE corporate actions, NIFTY index history.
+   Answer: can they be fetched reliably (NSE blocks some automated clients)? How far back do they
+   go? Do they cover ETFs? Recorded payloads become test fixtures.
+1. `jesse/services/historical_data/india/` — shared base (IST→UTC, INR symbols, source selection
+   per exchange, pacing) plus:
+   - `nse_archives.py`, `bse_archives.py`, `nifty_indices.py` — free default sources
+   - `corporate_actions.py` — split/bonus adjustment (D7)
+   - Interface ready for broker sources: `upstox.py`, `angel.py`, `dhan.py`, `kite.py` are added
+     when an account is available. Each maps symbols to the broker's instrument IDs and loads
+     credentials from `DataProviderCredentials`.
 2. Daily-as-sparse-1m storage (D3) and a route validator rejecting `< 1D` on these exchanges.
 3. `NSE` / `BSE` entries in `enums` and `info.py`: `settlement_currency='INR'`,
    `annualization=252`, backtesting only, `asset_class` equity.
@@ -56,19 +62,22 @@ data. Swing strategies fill against daily high/low anyway. Native non-1m sources
 6. Tests: provider contract tests on recorded fixtures; symbol helper; a sparse daily INR backtest
    via a test strategy (`jesse-strategy-tests` skill).
 
-Done when: `NSE:RELIANCE`, `NSE:NIFTY`, `NSE:NIFTYBEES` import and backtest on 1D.
+Done when: `NSE:RELIANCE`, `NSE:NIFTY`, `NSE:NIFTYBEES` import from the free sources, with no
+account, and backtest on 1D.
 
 ### Phase 2 — Screener and costs
 
-1. Universes: named symbol lists from NSE index-constituent CSVs, custom lists, or "all imported
-   on an exchange". **Survivorship bias:** constituent files are current-only — reports must say so.
+1. Universes from NSE index families (NIFTY200 Alpha 30, NIFTY100 Alpha 30, NIFTY Alpha 50, …;
+   exact index names verified against niftyindices.com). The current constituent CSV gives today's
+   members. **Survivorship bias:** for past dates, rebuild membership from NSE's rebalance
+   announcements where available; otherwise the report flags that it used current members.
+   Index levels are also imported, as benchmarks.
 2. `jesse.research.screen(universe, date_or_range, score_fn, filters)` → ranked table (+ CSV),
    computed with Jesse indicators over stored candles.
 3. Batch backtest of a shortlist (one run per symbol) with an aggregate report.
 4. Delivery (CNC) cost preset: STT, stamp duty, exchange txn charge, SEBI fee, GST, DP charge per
-   sell, Dhan brokerage. Rates carry effective dates. Requires a per-fill cost hook alongside the
+   sell, broker brokerage (per-broker preset). Rates carry effective dates. Requires a per-fill cost hook alongside the
    existing flat `fee_rate` (crypto exchanges keep the flat fee).
-5. Corporate-action adjustment (splits/bonus) only if Phase 1 probe shows Dhan data is unadjusted.
 
 ### Phase 3 — Fundamentals for screening
 
@@ -80,12 +89,12 @@ Fundamentals are not candles, so they get their own store and provider contract.
    public (no look-ahead). Restated figures are new rows with a later `filed_at`.
 2. **Provider contract** — `FundamentalsProvider` mirroring `HistoricalCandleProvider`
    (capabilities: metrics offered, history depth, point-in-time or not).
-3. **Sources, in order:**
-   - **CSV import** (always available): a documented column schema so any export can be loaded.
-   - **Automated source** — decision pending: NSE/BSE XBRL financial-results and
-     shareholding-pattern filings (official, free, carries filing timestamps; needs an XML parser on
-     the stdlib and robust fetching) **vs.** a paid vendor API. Dhan does not provide fundamentals.
-     Scraping sites whose terms prohibit it (e.g. Screener.in) is excluded.
+3. **Sources:**
+   - **Default, automated:** NSE/BSE XBRL financial-results and shareholding-pattern filings.
+     Official, free, and they carry filing timestamps. Parsed with the stdlib XML parser.
+   - **Paid vendors:** plug in as further `FundamentalsProvider` implementations.
+   - **CSV import:** a documented column schema, for one-off exports.
+   - Scraping sites whose terms prohibit it (e.g. Screener.in) is excluded.
 4. **Metrics** — reported: revenue, EBITDA, net profit, EPS, total equity, total debt, cash,
    shares outstanding, promoter holding %, promoter pledge %. Derived at `as_of` using that day's
    close: market cap, P/E (TTM), P/B, EV/EBITDA, ROE, ROCE, debt/equity, revenue and profit growth
@@ -103,9 +112,10 @@ Fundamentals are not candles, so they get their own store and provider contract.
 
 ### Phase 5 — Corporate bonds (attribute screening)
 
-1. Bond attributes from the Dhan scrip master (coupon, maturity, face value, ISIN) where present.
+1. Bond attributes (coupon, maturity, face value, ISIN) from the NSE/BSE debt-segment lists, or a
+   broker instrument list once one is configured.
 2. YTM from last traded price; attribute-based screening only — prints are too sparse to backtest.
-3. Credit ratings need a separate source (not in Dhan).
+3. Credit ratings need a separate source (not in the exchange lists or broker APIs).
 
 ### Later / optional
 
@@ -119,6 +129,5 @@ One `feat/india-*` branch per PR, PRs against `dev-pmallapp/jesse` master.
 
 ## Open questions
 
-- Dhan Data API plan active on the account? (historical endpoints are gated)
-- Phase 3 automated fundamentals source: NSE/BSE XBRL filings or a paid vendor?
-- Which universes matter first (NIFTY 50 / 200 / 500, NIFTY200 Alpha 30, custom)?
+- Can NSE archives be fetched reliably from this machine? (Phase 1 step 0)
+- Exact list of index families wanted beyond the Alpha 30 indices.
