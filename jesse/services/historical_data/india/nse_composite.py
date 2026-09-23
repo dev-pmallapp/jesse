@@ -24,6 +24,7 @@ import jesse.helpers as jh
 
 from ..contracts import SymbolCatalogEntry
 from ..errors import ProviderUnavailableError
+from .archive_cache import ArchiveFileCache
 from .http import IndiaHttpClient
 from .nse_archives import NseBhavcopySource
 from .nse_indices import NseIndexSource
@@ -55,13 +56,21 @@ class NseCompositeSource(IndiaDailySource):
         index_source: NseIndexSource | None = None,
         *,
         monotonic: Callable[[], float] | None = None,
+        cache: ArchiveFileCache | None = None,
     ) -> None:
         # Both constituents get their own IndiaHttpClient by default rather than sharing
         # one - each already paces itself against the shared process-global per-host
         # schedule (see http.py), so nothing is lost, and each stays independently
-        # injectable for tests.
-        self._bhavcopy_source = bhavcopy_source if bhavcopy_source is not None else NseBhavcopySource(IndiaHttpClient())
-        self._index_source = index_source if index_source is not None else NseIndexSource(IndiaHttpClient())
+        # injectable for tests. `cache` (story #8's on-disk archive cache) is forwarded
+        # to both only when this composite builds its own default constituents - an
+        # explicitly injected bhavcopy_source/index_source is trusted to already be
+        # wired however its caller wanted.
+        self._bhavcopy_source = (
+            bhavcopy_source if bhavcopy_source is not None else NseBhavcopySource(IndiaHttpClient(), cache=cache)
+        )
+        self._index_source = (
+            index_source if index_source is not None else NseIndexSource(IndiaHttpClient(), cache=cache)
+        )
         # Injectable so tests control the security-ticker cache's TTL expiry without
         # sleeping for real hours (mirrors NseIndexSource/BseBhavcopySource).
         self._monotonic = monotonic if monotonic is not None else time.monotonic
@@ -74,6 +83,24 @@ class NseCompositeSource(IndiaDailySource):
         if self._classify(ticker) == 'index':
             return self._index_source.fetch_daily_bars(ticker, sessions)
         return self._bhavcopy_source.fetch_daily_bars(ticker, sessions)
+
+    def fetch_session_bars(self, session: date) -> dict[str, DailyBar] | None:
+        """Bulk (story #8) counterpart to `fetch_daily_bars`: merges one session's two
+        whole-market files (stock/ETF bhavcopy + index-close) instead of routing per
+        ticker - `import_sessions` (bulk_import.py) needs every ticker's bar for a
+        session in one call. Same classification rule as `_classify` (a stock/ETF
+        always wins a ticker collision with an index - rule (a)), applied directly
+        here since both whole files are already in hand rather than re-consulting the
+        (TTL-cached) security/index catalogs per ticker.
+        """
+        security_bars = self._bhavcopy_source.fetch_session(session)
+        index_bars = self._index_source.fetch_session(session)
+        if security_bars is None and index_bars is None:
+            return None
+        merged: dict[str, DailyBar] = dict(index_bars) if index_bars else {}
+        if security_bars:
+            merged.update(security_bars)
+        return merged
 
     def list_symbol_entries(self) -> tuple[SymbolCatalogEntry, ...]:
         security_entries = self._bhavcopy_source.list_symbol_entries()

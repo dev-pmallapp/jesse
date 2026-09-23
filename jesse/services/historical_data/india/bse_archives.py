@@ -43,6 +43,7 @@ from .archive_parsing import (
     read_csv_rows_from_text,
     unzip_single_csv,
 )
+from .archive_cache import ArchiveFileCache
 from .http import IndiaHttpClient
 from .sessions import IST
 from .sources import ArchiveDailySource, DailyBar, register_source
@@ -122,8 +123,9 @@ class BseBhavcopySource(ArchiveDailySource):
         *,
         today: Callable[[], date] | None = None,
         monotonic: Callable[[], float] | None = None,
+        cache: ArchiveFileCache | None = None,
     ) -> None:
-        super().__init__()
+        super().__init__(cache=cache)
         self._client = client if client is not None else IndiaHttpClient()
         # Injectable so tests control which UDiFF file the lazy code-map/catalog walk-
         # back starts from, without depending on the real calendar date.
@@ -142,14 +144,20 @@ class BseBhavcopySource(ArchiveDailySource):
         if session < BSE_FIRST_SESSION:
             return None
 
-        payload = self._client.get(_udiff_url(session), expect='csv')
-        if payload is not None:
-            return self._parse_udiff_payload(payload, session)
+        bars = self._fetch_and_parse(
+            _udiff_url(session), kind='udiff', session=session, expect='csv', client=self._client,
+            parse=lambda payload: self._parse_udiff_payload(payload, session),
+        )
+        if bars is not None:
+            return bars
 
         if session < BSE_UDIFF_SWITCH_DATE:
-            payload = self._client.get(_legacy_url(session), expect='zip')
-            if payload is not None:
-                return self._parse_legacy_payload(payload, session)
+            bars = self._fetch_and_parse(
+                _legacy_url(session), kind='legacy', session=session, expect='zip', client=self._client,
+                parse=lambda payload: self._parse_legacy_payload(payload, session),
+            )
+            if bars is not None:
+                return bars
 
         # Neither format published for this date: a holiday, weekend, or a day
         # the archive simply doesn't have - not an error.

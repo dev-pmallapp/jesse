@@ -32,6 +32,7 @@ import jesse.helpers as jh
 from ..contracts import SymbolCatalogEntry
 from ..errors import HistoricalDataRequestError, ProviderSchemaError, ProviderUnavailableError
 from .archive_parsing import ROW_INVALID, build_bar, check_session_date, decode_csv_bytes, field, read_csv_rows_from_text
+from .archive_cache import ArchiveFileCache
 from .http import IndiaHttpClient
 from .sessions import IST
 from .sources import ArchiveDailySource, DailyBar, register_source
@@ -131,8 +132,9 @@ class NseIndexSource(ArchiveDailySource):
         *,
         today: Callable[[], date] | None = None,
         monotonic: Callable[[], float] | None = None,
+        cache: ArchiveFileCache | None = None,
     ) -> None:
-        super().__init__()
+        super().__init__(cache=cache)
         self._client = client if client is not None else IndiaHttpClient()
         # Injectable so tests control which index file the lazy catalog walk-back starts
         # from, without depending on the real calendar date (mirrors BseBhavcopySource).
@@ -150,11 +152,11 @@ class NseIndexSource(ArchiveDailySource):
         if session < NSE_INDEX_FIRST_SESSION:
             return None
 
-        payload = self._client.get(_index_url(session), expect='csv')
-        if payload is None:
-            # A holiday, weekend, or a day the archive simply doesn't have - not an error.
-            return None
-        return self._parse_index_csv(payload, session)
+        # A holiday, weekend, or a day the archive simply doesn't have - not an error.
+        return self._fetch_and_parse(
+            _index_url(session), kind='index', session=session, expect='csv', client=self._client,
+            parse=lambda payload: self._parse_index_csv(payload, session),
+        )
 
     def list_symbol_entries(self) -> tuple[SymbolCatalogEntry, ...]:
         rows = self._cached_recent_rows()

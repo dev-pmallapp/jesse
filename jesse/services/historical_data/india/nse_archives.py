@@ -44,6 +44,7 @@ from .archive_parsing import (
     read_csv_rows_from_text,
     unzip_single_csv,
 )
+from .archive_cache import ArchiveFileCache
 from .http import IndiaHttpClient
 from .sources import ArchiveDailySource, DailyBar, register_source
 from .symbols import to_jesse_symbol
@@ -106,8 +107,14 @@ class NseBhavcopySource(ArchiveDailySource):
     # closes, and PREVCLOSE is never adjusted either.
     prices_adjusted = False
 
-    def __init__(self, client: IndiaHttpClient | None = None, *, monotonic: Callable[[], float] | None = None) -> None:
-        super().__init__()
+    def __init__(
+        self,
+        client: IndiaHttpClient | None = None,
+        *,
+        monotonic: Callable[[], float] | None = None,
+        cache: ArchiveFileCache | None = None,
+    ) -> None:
+        super().__init__(cache=cache)
         self._client = client if client is not None else IndiaHttpClient()
         # Injectable so tests control the ISIN-map cache's TTL expiry without sleeping
         # for real hours (mirrors BseBhavcopySource/NseIndexSource).
@@ -125,14 +132,20 @@ class NseBhavcopySource(ArchiveDailySource):
         if session < NSE_FIRST_SESSION:
             return None
 
-        payload = self._client.get(_udiff_url(session), expect='zip')
-        if payload is not None:
-            return self._parse_archive(payload, session, is_udiff=True)
+        bars = self._fetch_and_parse(
+            _udiff_url(session), kind='udiff', session=session, expect='zip', client=self._client,
+            parse=lambda payload: self._parse_archive(payload, session, is_udiff=True),
+        )
+        if bars is not None:
+            return bars
 
         if session < UDIFF_SWITCH_DATE:
-            payload = self._client.get(_legacy_url(session), expect='zip')
-            if payload is not None:
-                return self._parse_archive(payload, session, is_udiff=False)
+            bars = self._fetch_and_parse(
+                _legacy_url(session), kind='legacy', session=session, expect='zip', client=self._client,
+                parse=lambda payload: self._parse_archive(payload, session, is_udiff=False),
+            )
+            if bars is not None:
+                return bars
 
         # Neither format published for this date: a holiday, weekend, or a day
         # the archive simply doesn't have - not an error.
