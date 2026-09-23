@@ -11,7 +11,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 
-from ..errors import ProviderNotRegisteredError, ProviderRegistrationError
+from ..contracts import SymbolCatalogEntry
+from ..errors import ProviderCapabilityError, ProviderNotRegisteredError, ProviderRegistrationError
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +39,10 @@ class IndiaDailySource(ABC):
     @abstractmethod
     def fetch_daily_bars(self, ticker: str, sessions: list[date]) -> list[DailyBar]:
         """Return ascending DailyBars for `ticker`, covering only sessions that actually traded."""
+
+    def list_symbol_entries(self) -> tuple[SymbolCatalogEntry, ...]:
+        """Return this source's symbol catalog; a source without one raises (opt-in per source)."""
+        raise ProviderCapabilityError(f'India source {self.source_id!r} does not provide a symbol catalog')
 
 
 class ArchiveDailySource(IndiaDailySource):
