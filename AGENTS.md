@@ -11,6 +11,39 @@ Before starting a task, scan the YAML frontmatter of every `.claude/skills/*/SKI
 
 - **`jesse-strategy-tests`** — conventions for writing Jesse strategy and engine tests.
 
+## Model Roles (Claude Code)
+
+This project splits work by model. The main session runs on **Opus** and acts as
+**orchestrator and designer only**; hands-on work is delegated to project subagents in
+`.claude/agents/`, whose `model:` frontmatter pins them to Sonnet or Haiku.
+
+**Opus (main session) owns:** understanding the request, reading enough code to design the
+change, making architecture/API/data-model decisions, splitting work into concrete specs,
+dispatching subagents, integrating and sanity-checking their results, and committing.
+
+**Delegate everything else:**
+
+| Agent | Model | Use for |
+|-------|-------|---------|
+| `implementer` | Sonnet | Writing/editing source code to a concrete spec |
+| `tester` | Sonnet | Writing tests, running `pytest` / Pyrefly, reporting results |
+| `reviewer` | Sonnet | Read-only review of a diff before committing |
+| `doc-writer` | Haiku | Docstrings, README/AGENTS.md/skill docs, release notes |
+| `scout` | Haiku | Cheap read-only lookups (where is X defined/used) |
+
+Rules:
+- Give each subagent a self-contained spec: files, functions, expected behavior, edge
+  cases, and which tests to run. Subagents start cold — do not assume they share context.
+- Default flow for a code change: design → `implementer` → `tester` → `reviewer` →
+  fix-ups via `implementer` → `doc-writer` if docs are affected → Opus commits.
+- Do not spawn built-in `general-purpose`/`Explore`/`Plan` agents for these roles — they
+  inherit Opus. If a built-in agent is unavoidable, pass `model: "sonnet"` or
+  `model: "haiku"` explicitly.
+- Opus may make trivial edits itself (a typo, a one-line config tweak) when dispatching
+  would cost more than doing it; anything beyond that goes to a subagent.
+- Independent subtasks (e.g. implementer on module A, doc-writer on module B) can run in
+  parallel.
+
 ## Key Characteristics
 
 ### Central Framework
