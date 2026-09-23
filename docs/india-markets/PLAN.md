@@ -22,8 +22,8 @@ Out of scope: F&O / options, intraday product rules (MIS square-off), live broke
 | D3 | Bar resolution | **Daily-first.** One 1m row per session stamped at the session close carries the day's OHLCV; the existing sparse-market engine aggregates it to correct 1D/1W candles. Routes on these markets must be `>= 1D` (validated) |
 | D4 | Mutual funds source | **AMFI NAV history** (official, free); NAV stored as a flat candle (O=H=L=C, volume 0) |
 | D5 | Fundamentals | Point-in-time store keyed by **filing date**. Default automated source: **NSE/BSE XBRL filings** (free). Paid vendors plug in behind a `FundamentalsProvider` interface |
-| D6 | Universes | **NSE index families only**, e.g. NIFTY200 Alpha 30 and NIFTY100 Alpha 30. No custom lists |
-| D7 | Price adjustment | Sources are interchangeable only if stored prices mean the same thing. Canonical form: **split/bonus-adjusted by Jesse** from NSE corporate-action data. Sources that return pre-adjusted prices declare it and skip that step. Each dataset records its source |
+| D6 | Universes | **NSE index families only.** Verified Alpha indices: Nifty Alpha 50, NIFTY100 Alpha 30, Nifty200 Alpha 30 ("NIFTY500 Alpha 30" does not exist). No custom lists |
+| D7 | Price adjustment | Sources are interchangeable only if stored prices mean the same thing. Canonical form: **split/bonus-adjusted by Jesse** from NSE corporate-action data. Confirmed necessary: bhavcopy prices are never adjusted afterwards (spike #2). Sources that return pre-adjusted prices declare it and skip that step. Each dataset records its source |
 
 Why D3: the engine only backtests from 1m rows (`source_timeframe` / `native_timeframes` exist in
 `historical_data/contracts.py` but nothing consumes them). Minute history for a 500-stock universe
@@ -45,10 +45,20 @@ data. Swing strategies fill against daily high/low anyway. Native non-1m sources
 
 ### Phase 1 — NSE/BSE equities, ETFs, indices (free data + backtest)
 
-0. **Probe the free sources** (before any code): NSE equity bhavcopy (old format and the UDiFF
-   format NSE switched to in 2024), BSE bhavcopy, NSE corporate actions, NIFTY index history.
-   Answer: can they be fetched reliably (NSE blocks some automated clients)? How far back do they
-   go? Do they cover ETFs? Recorded payloads become test fixtures.
+0. ~~Probe the free sources~~ — done in #2; findings in `docs/india-markets/spike-sources.md`,
+   fixtures in `tests/fixtures/india/`. Consequences for the steps below:
+   - NSE bhavcopy: UDiFF format first (one schema, has ISIN), legacy format as fallback for older
+     dates (legacy works 1994 → 07-Jul-2024). How far back UDiFF was backfilled is still unknown.
+   - BSE and niftyindices.com return "not found" as HTTP 200 with an HTML page: fetchers must
+     check content type and body, never trust the status code alone.
+   - BSE legacy files have no symbol column (numeric scrip code only); NSE and BSE series codes
+     differ and need a mapping table.
+   - ETFs trade under series `EQ` like stocks; tell them apart with the ETF master
+     (`eq_etfseclist.csv`) joined with `EQUITY_L.csv`.
+   - NSE corporate actions: the homepage answers 403 yet sets working session cookies; action type
+     (split/bonus/dividend) must be parsed from the free-text `subject`.
+   - Index levels: NSE `ind_close_all` daily file (full OHLC, from ~2010–2015); index names change
+     over time (`CNX Nifty` → `Nifty 50`), so the alias table must be date-aware.
 1. `jesse/services/historical_data/india/` — shared base (IST→UTC, INR symbols, source selection
    per exchange, pacing) plus:
    - `nse_archives.py`, `bse_archives.py`, `nifty_indices.py` — free default sources
@@ -69,8 +79,9 @@ account, and backtest on 1D.
 
 ### Phase 2 — Screener and costs
 
-1. Universes from NSE index families (NIFTY200 Alpha 30, NIFTY100 Alpha 30, NIFTY Alpha 50, …;
-   exact index names verified against niftyindices.com). The current constituent CSV gives today's
+1. Universes from NSE index families (Nifty Alpha 50, NIFTY100 Alpha 30, Nifty200 Alpha 30, and
+   other families as needed). Constituent file names for Alpha 50 and NIFTY100 Alpha 30 are not yet
+   found (see the follow-up spike). The current constituent CSV gives today's
    members. **Survivorship bias:** for past dates, rebuild membership from NSE's rebalance
    announcements where available; otherwise the report flags that it used current members.
    Index levels are also imported, as benchmarks.
