@@ -44,6 +44,21 @@ class IndiaDailySource(ABC):
         """Return this source's symbol catalog; a source without one raises (opt-in per source)."""
         raise ProviderCapabilityError(f'India source {self.source_id!r} does not provide a symbol catalog')
 
+    def is_index(self, ticker: str) -> bool:
+        """Whether `ticker` (an exchange ticker - e.g. from `to_exchange_ticker`, not a
+        Jesse symbol) names an index rather than a tradable security.
+
+        This is the single authority story #7 (split/bonus price adjustment) uses to
+        decide whether a symbol's prices are ever adjusted: an index's own level is
+        never retroactively adjusted for a constituent's corporate action (a
+        constituent's split/bonus already flows through the index via its float-
+        adjusted weight - see NseIndexSource's `prices_adjusted` docstring), so #7 must
+        skip adjustment entirely for anything this returns True for. Defaults to False:
+        only a source that actually publishes indices (NseIndexSource,
+        NseCompositeSource) needs to override it.
+        """
+        return False
+
 
 class ArchiveDailySource(IndiaDailySource):
     """Base for sources that publish one whole-market file per session (bhavcopy-style)."""

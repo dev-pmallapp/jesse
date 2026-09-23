@@ -386,14 +386,16 @@ def test_ticker_search_capability_true_for_nse_false_for_source_without_catalog(
 
 
 # --------------------------------------------------------------------------------------
-# Default registration
+# Non-default registration (story #6, nse_composite.py, registers the NSE default -
+# see tests/test_india_nse_indices.py for the default-registration assertion)
 # --------------------------------------------------------------------------------------
 
-def test_india_exchange_provider_resolves_to_nse_bhavcopy_source_by_default():
-    provider = IndiaExchangeProvider('NSE')
+def test_nse_bhavcopy_source_still_selectable_explicitly_by_id():
+    from jesse.services.historical_data.india.sources import create_source
 
-    assert isinstance(provider._source, NseBhavcopySource)
-    assert provider.source_id == 'nse_bhavcopy'
+    source = create_source('NSE', 'nse_bhavcopy')
+
+    assert isinstance(source, NseBhavcopySource)
 
 
 # --------------------------------------------------------------------------------------
