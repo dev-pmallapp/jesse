@@ -4,22 +4,23 @@ from jesse.services import logger
 
 # Timeframes accepted on a "daily-bars-only" exchange (story #8; #9 sets the
 # `daily_bars_only` flag on NSE/BSE-style India exchanges in `jesse.info.exchange_info`)
-# - only 1D. Measured against how Jesse actually buckets 1m rows into higher timeframes
-# (`candle_service.generate_candle_from_observed_minutes`/`generate_candle_from_one_minutes`:
-# `bucket_start = timestamp - (timestamp % (timeframe_minutes * 60_000))`, i.e. every
-# bucket boundary is anchored to the Unix epoch, 1970-01-01 00:00:00 UTC):
+# - 1D and 1W. Measured against how Jesse actually buckets 1m rows into higher timeframes
+# (`jesse.helpers.timeframe_bucket_start`: `bucket_start = timestamp - (timestamp %
+# (timeframe_minutes * 60_000))`, i.e. every bucket boundary is anchored to the Unix
+# epoch, 1970-01-01 00:00:00 UTC):
 # - 1D's bucket width (86_400_000 ms) divides evenly into a UTC day, so 1D buckets are
 #   plain UTC-midnight boundaries - and a session's stored row (09:59 UTC, D3) always
 #   falls inside the correct IST trading day's UTC-midnight-to-midnight bucket. Allowed.
-# - 1W's bucket width (604_800_000 ms, 7 days) is ALSO epoch-anchored - but the epoch
-#   (1970-01-01) was a THURSDAY, so 1W buckets start every Thursday 00:00 UTC, not
-#   Monday. A "weekly" India candle would silently span Thu-Wed instead of a real
-#   Mon-Fri trading week (verified: session_row_timestamp(2024-01-03) buckets to
-#   2023-12-28 00:00 UTC, a Thursday). Refused until a Monday-aligned weekly
-#   aggregation exists for sparse-1m sources - tracked as a follow-up, not fixed here.
+# - 1W's bucket width (604_800_000 ms, 7 days) is ALSO epoch-anchored - and the epoch
+#   (1970-01-01) was a THURSDAY, so plain epoch-anchored 1W buckets start every Thursday
+#   00:00 UTC, not Monday, which would silently span Thu-Wed instead of a real Mon-Fri
+#   trading week. `timeframe_bucket_start(..., monday_weeks=True)` (used for every
+#   daily-bars-only exchange - see its call sites) instead anchors 1W buckets to
+#   Monday 00:00 UTC via `jesse.helpers.MONDAY_WEEK_OFFSET_MS`, so the 09:59 UTC
+#   session row always falls in the correct IST trading week. Allowed (story #67).
 # - 3D is never allowed at all, for any exchange: a 3-day bucket walks across weekends
 #   at an arbitrary phase and never lines up with any real exchange session structure.
-DAILY_BARS_ONLY_ALLOWED_TIMEFRAMES = ('1D',)
+DAILY_BARS_ONLY_ALLOWED_TIMEFRAMES = ('1D', '1W')
 
 
 def is_daily_bars_only(exchange: str) -> bool:

@@ -1260,6 +1260,38 @@ def timeframe_to_one_minutes(timeframe: str) -> int:
         return timeframe_to_one_minutes(timeframe)
 
 
+# The Unix epoch (1970-01-01 00:00:00 UTC) was a Thursday, so plain epoch-anchored
+# 1W buckets (`ts - ts % tf_ms`) start every Thursday. 1970-01-05 (the first Monday
+# on/after the epoch) shifts that anchor by 4 days so 1W buckets start on Monday
+# 00:00 UTC instead - used only for daily-bars-only (NSE/BSE-style) exchanges, see
+# `timeframe_bucket_start` below.
+MONDAY_WEEK_OFFSET_MS = 4 * 86_400_000
+
+
+def timeframe_bucket_start(
+        timestamps: Union[int, np.ndarray],
+        timeframe: str,
+        monday_weeks: bool = False,
+) -> Union[int, np.ndarray]:
+    """Return the clock-aligned bucket start(s) for `timestamps` at `timeframe`.
+
+    Every Jesse timeframe bucket is normally epoch-anchored (`ts - ts % tf_ms`) - true
+    for 1D too, since a UTC day divides evenly into the epoch and a daily-bars-only
+    session's single 09:59 UTC row always falls in the correct IST trading day.
+
+    `monday_weeks=True` (passed only for daily-bars-only exchanges, see
+    `jesse.services.validators.is_daily_bars_only`) instead Monday-aligns 1W buckets
+    via `MONDAY_WEEK_OFFSET_MS`, so a NSE/BSE weekly candle spans the real Mon-Fri
+    trading week instead of the crypto-default Thu-Wed. Every other timeframe, and
+    every call with `monday_weeks=False` (the default - every existing caller), keeps
+    the original epoch-anchored math unchanged.
+    """
+    timeframe_ms = TIMEFRAME_TO_ONE_MINUTES[timeframe] * 60_000
+    if timeframe == '1W' and monday_weeks:
+        return ((timestamps - MONDAY_WEEK_OFFSET_MS) // timeframe_ms) * timeframe_ms + MONDAY_WEEK_OFFSET_MS
+    return (timestamps // timeframe_ms) * timeframe_ms
+
+
 def compressed_response(content: str) -> dict:
     """
     Helper function to handle compression for HTTP responses.

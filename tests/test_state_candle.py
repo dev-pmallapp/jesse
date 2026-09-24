@@ -226,11 +226,11 @@ def test_multiple_symbols_and_data_route_timeframes_remain_isolated():
     candle_service.batch_add_candle(btc, 'Sandbox', 'BTC-USD', '1m', with_generation=False)
     candle_service.batch_add_candle(eth, 'Sandbox', 'ETH-USD', '1m', with_generation=False)
     candle_service.batch_add_candle(
-        candle_service._get_generated_candles('5m', btc),
+        candle_service._get_generated_candles('5m', btc, 'Sandbox'),
         'Sandbox', 'BTC-USD', '5m', with_generation=False,
     )
     candle_service.batch_add_candle(
-        candle_service._get_generated_candles('15m', eth),
+        candle_service._get_generated_candles('15m', eth, 'Sandbox'),
         'Sandbox', 'ETH-USD', '15m', with_generation=False,
     )
 

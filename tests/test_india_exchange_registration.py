@@ -115,7 +115,7 @@ class _FakeRouter:
         self.data_routes = data_routes or []
 
 
-@pytest.mark.parametrize('timeframe', ['1h', '1W'])
+@pytest.mark.parametrize('timeframe', ['1h', '3D'])
 def test_validate_routes_rejects_non_daily_timeframe_on_nse_route(timeframe):
     router = _FakeRouter([Route('NSE', 'RELIANCE-INR', timeframe, 'Test19')])
 
@@ -125,6 +125,13 @@ def test_validate_routes_rejects_non_daily_timeframe_on_nse_route(timeframe):
 
 def test_validate_routes_accepts_1d_on_nse_route():
     router = _FakeRouter([Route('NSE', 'RELIANCE-INR', '1D', 'Test19')])
+
+    validators.validate_routes(router)  # must not raise
+
+
+def test_validate_routes_accepts_1w_on_nse_route():
+    # Story #67: 1W is now Monday-aligned and accepted, same as 1D.
+    router = _FakeRouter([Route('NSE', 'RELIANCE-INR', '1W', 'Test19')])
 
     validators.validate_routes(router)  # must not raise
 

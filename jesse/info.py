@@ -626,8 +626,9 @@ exchange_info = {
         "fee": 0.0,
         "type": "spot",
         "supported_leverage_modes": [],
-        # Only 1D is usable: `daily_bars_only` below rejects every other timeframe (see validators.py).
-        "supported_timeframes": [timeframes.DAY_1],
+        # Only 1D and 1W are usable: `daily_bars_only` below rejects every other timeframe
+        # (see validators.py; 1W is Monday-anchored via `jh.timeframe_bucket_start`).
+        "supported_timeframes": [timeframes.DAY_1, timeframes.WEEK_1],
         "modes": {
             "backtesting": True,
             "live_trading": False,
@@ -639,7 +640,8 @@ exchange_info = {
         "simulation_model": "spot",
         "annualization": 252,
         # `is_daily_bars_only`/`_validate_daily_bars_only_timeframes` (services/validators.py) reject any
-        # non-1D route: the India source layer stores exactly one 1m row per session, stamped at 15:29 IST.
+        # route outside `DAILY_BARS_ONLY_ALLOWED_TIMEFRAMES`: the India source layer stores exactly one
+        # 1m row per session, stamped at 15:29 IST.
         "daily_bars_only": True,
     },
     exchanges_enums.BSE: {
@@ -649,8 +651,9 @@ exchange_info = {
         "fee": 0.0,
         "type": "spot",
         "supported_leverage_modes": [],
-        # Only 1D is usable: `daily_bars_only` below rejects every other timeframe (see validators.py).
-        "supported_timeframes": [timeframes.DAY_1],
+        # Only 1D and 1W are usable: `daily_bars_only` below rejects every other timeframe
+        # (see validators.py; 1W is Monday-anchored via `jh.timeframe_bucket_start`).
+        "supported_timeframes": [timeframes.DAY_1, timeframes.WEEK_1],
         "modes": {
             "backtesting": True,
             "live_trading": False,
@@ -662,7 +665,8 @@ exchange_info = {
         "simulation_model": "spot",
         "annualization": 252,
         # `is_daily_bars_only`/`_validate_daily_bars_only_timeframes` (services/validators.py) reject any
-        # non-1D route: the India source layer stores exactly one 1m row per session, stamped at 15:29 IST.
+        # route outside `DAILY_BARS_ONLY_ALLOWED_TIMEFRAMES`: the India source layer stores exactly one
+        # 1m row per session, stamped at 15:29 IST.
         "daily_bars_only": True,
     },
 }

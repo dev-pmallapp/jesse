@@ -29,6 +29,8 @@ India data is imported; for daily-only backtests the special-session overrides a
 """
 from __future__ import annotations
 
+import datetime
+
 # Source: NSE's official trading-holiday API `https://www.nseindia.com/api/holiday-master
 # ?type=trading&year=<Y>`, segment "CM" (capital market/equities), fetched 2026-09-24.
 # The endpoint returns nothing for years before 2011. A few entries fall on a weekend
@@ -455,3 +457,24 @@ def bse_trading_hours(start_year: int | None = None, end_year: int | None = None
     so this simply reuses the NSE builder.
     """
     return _trading_hours(start_year, end_year)
+
+
+def is_trading_day(date: datetime.date) -> bool:
+    """Whether a real NSE/BSE equity session occurred on `date` (story #67 - used to
+    decide 1W-bucket release timing, see `jesse.services.session_calendar`).
+
+    True for a Mon-Fri date that isn't in `NSE_HOLIDAYS`, or for any date listed in
+    `SPECIAL_SESSIONS` - including the Muhurat evenings, even though those sessions'
+    windows fall outside 09:15-15:30 and so never produce a stored daily-bar row (see
+    the module docstring): a session still traded that day. Years outside
+    `COVERED_YEARS` have no holiday data here, so they fall back to plain Mon-Fri.
+    """
+    date_text = date.isoformat()
+    if date_text in SPECIAL_SESSIONS:
+        return True
+    if date.weekday() >= 5:
+        return False
+    if date.year not in COVERED_YEARS:
+        return True
+    holidays = {holiday_date for holiday_date, _description in NSE_HOLIDAYS[date.year]}
+    return date_text not in holidays
