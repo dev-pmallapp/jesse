@@ -2,7 +2,7 @@ import csv
 import io
 import re
 from collections.abc import Iterator
-from typing import Annotated
+from typing import Annotated, Union
 
 from fastapi import APIRouter, Depends, Form
 from fastapi.responses import StreamingResponse
@@ -53,17 +53,21 @@ def _stream_candle_csv(exchange: str, symbol: str) -> Iterator[str]:
         yield output.getvalue()
 
 
-@export_router.post('/export')
+@export_router.post('/export', response_model=None)
 def export_candles(
     exchange: Annotated[str, Form()],
     symbol: Annotated[str, Form()],
-) -> StreamingResponse:
+) -> Union[StreamingResponse, JSONResponse]:
     """Stream one exchange/symbol series as a round-trippable CSV download.
 
     `symbol` accepts a bare NSE/BSE ticker or a TradingView-style symbol in addition
     to the internal BASE-QUOTE form.
     """
-    symbol = normalize_symbol(exchange, symbol)
+    try:
+        symbol = normalize_symbol(exchange, symbol)
+    except exceptions.InvalidSymbol as e:
+        return JSONResponse({'error': str(e)}, status_code=422)
+
     filename = _safe_export_filename(exchange, symbol)
     return StreamingResponse(
         _stream_candle_csv(exchange, symbol),
@@ -149,13 +153,19 @@ def clear_candles_database_cache():
 def get_candles(json_request: GetCandlesRequestJson) -> JSONResponse:
     """
     Get candles for a specific exchange, symbol, and timeframe
+
+    `symbol` accepts a bare NSE/BSE ticker or a TradingView-style symbol in addition
+    to the internal BASE-QUOTE form.
     """
 
     jh.validate_cwd()
 
     from jesse.modes.data_provider import get_candles as gc
 
-    arr = gc(json_request.exchange, json_request.symbol, json_request.timeframe)
+    try:
+        arr = gc(json_request.exchange, json_request.symbol, json_request.timeframe)
+    except exceptions.InvalidSymbol as e:
+        return JSONResponse({'error': str(e)}, status_code=422)
 
     return JSONResponse({
         'id': json_request.id,

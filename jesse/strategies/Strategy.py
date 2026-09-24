@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from functools import lru_cache
 from time import sleep
 from typing import List, Dict, Union, Optional
 import os
@@ -15,6 +16,7 @@ from jesse.services import metrics
 from jesse.services.broker import Broker
 from jesse.services import order_service, candle_service
 from jesse.services import trading_hours as trading_hours_service
+from jesse.services.symbol_input import normalize_symbol
 from jesse.repositories import order_repository
 from jesse.store import store
 from jesse.services.cache import cached
@@ -45,6 +47,22 @@ def _np_array_equal(a1, a2) -> bool:
             return True
         return bool((a1 == a2).all())
     return np.array_equal(a1, a2)
+
+
+@lru_cache(maxsize=None)
+def _cached_normalize_symbol(exchange: str, value: str) -> str:
+    """Memoised `normalize_symbol`, keyed by (exchange, value).
+
+    `Strategy.get_candles` (unlike `self.candles`, whose `self.symbol` is already
+    normalized once by the router at route-init time) accepts a user-supplied symbol
+    and may be called every candle, so re-running the India ticker-encoding parse on
+    every call would add per-candle overhead for no benefit - the mapping from a given
+    (exchange, value) pair to its canonical symbol never changes within a process.
+    `lru_cache` only memoises a successful return value, never a raised exception, so
+    an invalid symbol keeps raising `exceptions.InvalidSymbol` on every call instead of
+    being remembered as valid.
+    """
+    return normalize_symbol(exchange, value)
 
 
 class Strategy(ABC):
@@ -1534,12 +1552,19 @@ class Strategy(ABC):
         """
         Get candles by passing exchange, symbol, and timeframe
 
+        `symbol` accepts a bare NSE/BSE ticker (`TCS`) or a TradingView-style symbol
+        (`NSE:TCS`) in addition to the internal `TCS-INR` form - normalized here (not
+        in `candle_service.get_candles`, which is internal/hot and always receives an
+        already-canonical symbol) and memoised since this method can be called every
+        candle.
+
         :param exchange: str
         :param symbol: str
         :param timeframe: str
 
         :return: np.ndarray
         """
+        symbol = _cached_normalize_symbol(exchange, symbol)
         return candle_service.get_candles(exchange, symbol, timeframe)
 
     @property

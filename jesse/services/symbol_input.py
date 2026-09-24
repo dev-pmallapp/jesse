@@ -6,9 +6,9 @@ TradingView-style `EXCHANGE:TICKER` symbol; Jesse's core still needs the interna
 symbol validation, DB keys and adjustment state all split on '-' and assume that shape.
 This module is the single place that bridges the two, so every user/agent-facing entry
 point (the router, research.backtest/get_candles/import_candles, the candle import
-request/controller, MCP tool inputs) calls `normalize_symbol` once at its own boundary
-instead of duplicating the encoding rules already implemented in
-`historical_data/india/symbols.py`.
+request/controller, `Strategy.get_candles`, MCP tool inputs) calls `normalize_symbol`
+once at its own boundary instead of duplicating the encoding rules already implemented
+in `historical_data/india/symbols.py`.
 
 Import note: this module must NOT import `jesse.services.historical_data.india` at
 module scope - that subpackage's `__init__` registers every India data source as a
@@ -37,6 +37,7 @@ def normalize_symbol(exchange: str, value: str) -> str:
     - a bare exchange ticker: `RELIANCE` -> `RELIANCE-INR`, `BAJAJ-AUTO` -> `BAJAJ_AUTO-INR`
     - a TradingView-style symbol: `NSE:RELIANCE` -> `RELIANCE-INR`
     - the internal form itself: `RELIANCE-INR` / `BAJAJ_AUTO-INR` (returned upper-cased)
+    - the internal form with a TradingView prefix: `NSE:RELIANCE-INR` -> `RELIANCE-INR`
 
     Any other exchange (e.g. the internal `Sandbox` test exchange) doesn't use this
     bare-ticker convention, so `value` is returned unchanged (only whitespace-stripped).
@@ -67,6 +68,50 @@ def normalize_symbol(exchange: str, value: str) -> str:
 
     upper = stripped.upper()
 
+    # The TradingView `EXCHANGE:` prefix must be resolved and checked against
+    # `exchange` *before* any bare/canonical rule below runs. The `-INR` check further
+    # down only looks at the string's suffix, so `NSE:RELIANCE-INR` or (worse)
+    # `BSE:RELIANCE-INR` on an NSE route would previously match that branch first and
+    # be returned/accepted unchanged, prefix and all - silently keeping a stray ':' in
+    # the "canonical" symbol and never checking which exchange the prefix named
+    # (jesse#75 review finding). Handling ':' first means every other branch below is
+    # guaranteed to see a colon-free string.
+    if ':' in upper:
+        if upper.count(':') > 1:
+            raise exceptions.InvalidSymbol(f'symbol {value!r} has more than one ":"')
+        prefix, _, remainder = upper.partition(':')
+        prefix, remainder = prefix.strip(), remainder.strip()
+        if not remainder:
+            raise exceptions.InvalidSymbol(f'symbol {value!r} is missing its TICKER after ":"')
+
+        if remainder.endswith('-INR'):
+            # `EXCHANGE:BASE-INR`, e.g. `NSE:RELIANCE-INR` or `NSE:BAJAJ_AUTO-INR` -
+            # decode the canonical remainder back to a bare ticker first (this also
+            # validates its shape: rejects an extra '-' or an embedded '_'), then
+            # re-encode `PREFIX:ticker` and hand it to `parse_tradingview_symbol` so the
+            # prefix -> exchange mapping stays resolved by the single source of truth in
+            # `historical_data/india/symbols.py` instead of being duplicated here.
+            try:
+                bare_ticker = india_symbols.to_exchange_ticker(remainder)
+            except HistoricalDataRequestError as e:
+                raise exceptions.InvalidSymbol(str(e)) from e
+            try:
+                instrument = india_symbols.parse_tradingview_symbol(f'{prefix}:{bare_ticker}')
+            except HistoricalDataRequestError as e:
+                raise exceptions.InvalidSymbol(str(e)) from e
+        else:
+            # `EXCHANGE:TICKER`, e.g. `NSE:RELIANCE` or `NSE:BAJAJ-AUTO`.
+            try:
+                instrument = india_symbols.parse_tradingview_symbol(upper)
+            except HistoricalDataRequestError as e:
+                raise exceptions.InvalidSymbol(str(e)) from e
+
+        if instrument.exchange != exchange:
+            raise exceptions.InvalidSymbol(
+                f'symbol {value!r} is prefixed for {instrument.exchange!r}, not {exchange!r}'
+            )
+        return instrument.symbol
+
     if upper.endswith('-INR'):
         # Already the internal form - validate its shape (rejects things like an
         # extra '-' or an embedded '_') and return it as-is rather than re-encoding it.
@@ -75,17 +120,6 @@ def normalize_symbol(exchange: str, value: str) -> str:
         except HistoricalDataRequestError as e:
             raise exceptions.InvalidSymbol(str(e)) from e
         return upper
-
-    if ':' in upper:
-        try:
-            instrument = india_symbols.parse_tradingview_symbol(upper)
-        except HistoricalDataRequestError as e:
-            raise exceptions.InvalidSymbol(str(e)) from e
-        if instrument.exchange != exchange:
-            raise exceptions.InvalidSymbol(
-                f'symbol {value!r} is prefixed for {instrument.exchange!r}, not {exchange!r}'
-            )
-        return instrument.symbol
 
     # Bare exchange ticker, e.g. `RELIANCE` or `BAJAJ-AUTO`.
     try:

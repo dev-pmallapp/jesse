@@ -22,69 +22,74 @@ def get_candles(exchange: str, symbol: str, timeframe: str):
     from jesse.services.db import database
     database.open_connection()
 
-    symbol = normalize_symbol(exchange, symbol)
+    # Everything below can raise (InvalidSymbol from normalize_symbol, a bad timeframe,
+    # a DB error) before reaching the close call at the end, which would leak the
+    # connection - mirrors the try/finally pattern in ai_model_controller.py /
+    # exchange_api_keys.py. Success-path behaviour (including the early `return []`
+    # below) is unchanged.
+    try:
+        symbol = normalize_symbol(exchange, symbol)
 
-    # fetch the current value for warmup_candles from the database
-    from jesse.models.Option import Option
-    o = Option.get(Option.type == 'config')
-    db_config = json.loads(o.json)
-    warmup_candles_num = db_config['live']['warm_up_candles']
+        # fetch the current value for warmup_candles from the database
+        from jesse.models.Option import Option
+        o = Option.get(Option.type == 'config')
+        db_config = json.loads(o.json)
+        warmup_candles_num = db_config['live']['warm_up_candles']
 
-    one_min_count = jh.timeframe_to_one_minutes(timeframe)
-    finish_date = jh.now(force_fresh=True)
-    start_date = jh.get_candle_start_timestamp_based_on_timeframe(timeframe, warmup_candles_num)
+        one_min_count = jh.timeframe_to_one_minutes(timeframe)
+        finish_date = jh.now(force_fresh=True)
+        start_date = jh.get_candle_start_timestamp_based_on_timeframe(timeframe, warmup_candles_num)
 
-    # fetch value of generate_candles_from_1m fresh from the database
-    o = Option.get(Option.type == 'config')
-    generate_candles_from_1m: bool = json.loads(o.json)['live']['generate_candles_from_1m']
+        # fetch value of generate_candles_from_1m fresh from the database
+        o = Option.get(Option.type == 'config')
+        generate_candles_from_1m: bool = json.loads(o.json)['live']['generate_candles_from_1m']
 
-    # fetch 1m candles from database
-    if generate_candles_from_1m:
-        timeframe_to_fetch = '1m'
-    else:
-        timeframe_to_fetch = timeframe
+        # fetch 1m candles from database
+        if generate_candles_from_1m:
+            timeframe_to_fetch = '1m'
+        else:
+            timeframe_to_fetch = timeframe
 
-    candles = np.array(
-        candle_repository.fetch_candles_from_db(exchange, symbol, timeframe_to_fetch, start_date, finish_date)
-    )
+        candles = np.array(
+            candle_repository.fetch_candles_from_db(exchange, symbol, timeframe_to_fetch, start_date, finish_date)
+        )
 
-    # if there are no candles in the database, return []
-    if candles.size == 0:
+        # if there are no candles in the database, return []
+        if candles.size == 0:
+            return []
+
+        if generate_candles_from_1m:
+            # leave out first candles until the timestamp of the first candle is the beginning of the timeframe
+            timeframe_duration = one_min_count * 60_000
+            while candles[0][0] % timeframe_duration != 0:
+                candles = candles[1:]
+
+            # generate bigger candles from 1m candles
+            if timeframe != '1m':
+                generated_candles = []
+                for i in range(len(candles)):
+                    if (i + 1) % one_min_count == 0:
+                        bigger_candle = candle_service.generate_candle_from_one_minutes(
+                            timeframe,
+                            candles[(i - (one_min_count - 1)):(i + 1)],
+                            True
+                        )
+                        generated_candles.append(bigger_candle)
+
+                candles = generated_candles
+
+        return [
+            {
+                'time': int(c[0] / 1000),
+                'open': c[1],
+                'close': c[2],
+                'high': c[3],
+                'low': c[4],
+                'volume': c[5],
+            } for c in candles
+        ]
+    finally:
         database.close_connection()
-        return []
-
-    if generate_candles_from_1m:
-        # leave out first candles until the timestamp of the first candle is the beginning of the timeframe
-        timeframe_duration = one_min_count * 60_000
-        while candles[0][0] % timeframe_duration != 0:
-            candles = candles[1:]
-
-        # generate bigger candles from 1m candles
-        if timeframe != '1m':
-            generated_candles = []
-            for i in range(len(candles)):
-                if (i + 1) % one_min_count == 0:
-                    bigger_candle = candle_service.generate_candle_from_one_minutes(
-                        timeframe,
-                        candles[(i - (one_min_count - 1)):(i + 1)],
-                        True
-                    )
-                    generated_candles.append(bigger_candle)
-
-            candles = generated_candles
-
-    database.close_connection()
-
-    return [
-        {
-            'time': int(c[0] / 1000),
-            'open': c[1],
-            'close': c[2],
-            'high': c[3],
-            'low': c[4],
-            'volume': c[5],
-        } for c in candles
-    ]
 
 
 _SETTINGS_SECTIONS = ('backtest', 'live', 'optimization')

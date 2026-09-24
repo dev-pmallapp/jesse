@@ -5,6 +5,12 @@ Exercised via `jesse.research.backtest` in
 one-1m-row-per-session series (`session_row_timestamp`, D3) covering real 2024
 NSE trading sessions. All assertions live here, per this repo's strategy-driven
 test convention (see `.claude/skills/jesse-strategy-tests/SKILL.md`).
+
+Also doubles as the `Strategy.get_candles` bare-ticker regression test for
+dev-pmallapp/jesse#75 (see `before()`'s `display_ticker`/`get_candles` check below) -
+this strategy is parametrized across multiple symbol spellings/canonical symbols in
+`tests/test_india_bare_tickers.py`, so that check derives the bare ticker from
+`self.symbol` rather than hard-coding one.
 """
 from datetime import datetime, timezone
 
@@ -12,6 +18,7 @@ from jesse.strategies import Strategy
 import jesse.helpers as jh
 from jesse.store import store
 from jesse.markets.india import nse_trading_hours
+from jesse.services.symbol_input import display_ticker
 
 # Matches the test file's config (`starting_balance`) so `before()` can assert the
 # INR wallet starts unspent.
@@ -43,6 +50,15 @@ class TestIndiaDailyInrBacktest(Strategy):
             # metrics engine (jesse/services/metrics.py reads this same key), even
             # though the research config passed in never sets 'annualization'.
             assert jh.get_config('env.metrics.annualization') == 252
+
+            # jesse#75: Strategy.get_candles must accept a bare NSE/BSE ticker
+            # (e.g. `RELIANCE`), normalizing it to the same canonical `-INR` symbol
+            # this route already uses. Derived from self.symbol (not hard-coded)
+            # since this strategy is reused across multiple symbols/spellings.
+            bare_ticker = display_ticker(self.exchange, self.symbol)
+            fetched = self.get_candles(self.exchange, bare_ticker, self.timeframe)
+            assert fetched.shape == self.candles.shape
+            assert (fetched == self.candles).all()
 
         ts = int(self.current_candle[0])
         # 1D buckets are plain UTC-midnight boundaries (epoch-anchored, 86_400_000 ms

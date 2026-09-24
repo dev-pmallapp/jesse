@@ -35,6 +35,11 @@ _NORMALIZE_TABLE = [
     (exchanges.NSE, 'NSE:RELIANCE', 'RELIANCE-INR'),
     (exchanges.NSE, 'nse:reliance', 'RELIANCE-INR'),
     (exchanges.NSE, 'NSE:BAJAJ-AUTO', 'BAJAJ_AUTO-INR'),
+    # TradingView prefix wrapped around the internal BASE-QUOTE form itself (jesse#75
+    # review finding: the '-INR' suffix check used to run before the ':' check, so this
+    # slipped through with the stray 'NSE:' prefix still attached).
+    (exchanges.NSE, 'NSE:RELIANCE-INR', 'RELIANCE-INR'),
+    (exchanges.NSE, 'NSE:BAJAJ_AUTO-INR', 'BAJAJ_AUTO-INR'),
     (exchanges.NSE, 'RELIANCE-INR', 'RELIANCE-INR'),
     (exchanges.NSE, 'reliance-inr', 'RELIANCE-INR'),
     (exchanges.NSE, 'BAJAJ_AUTO-INR', 'BAJAJ_AUTO-INR'),
@@ -67,6 +72,20 @@ def test_normalize_symbol_rejects_wrong_exchange_prefix():
     not silently accepted - e.g. BSE:RELIANCE on an NSE route."""
     with pytest.raises(exceptions.InvalidSymbol):
         normalize_symbol(exchanges.NSE, 'BSE:RELIANCE')
+
+
+def test_normalize_symbol_rejects_wrong_exchange_prefix_on_internal_form():
+    """Same as above, but with the TradingView prefix wrapped around the internal
+    BASE-QUOTE form - BSE:RELIANCE-INR must not pass silently on an NSE route."""
+    with pytest.raises(exceptions.InvalidSymbol):
+        normalize_symbol(exchanges.NSE, 'BSE:RELIANCE-INR')
+
+
+def test_normalize_symbol_rejects_stray_colon():
+    """A colon that isn't a valid EXCHANGE: prefix (e.g. a typo splitting the ticker
+    itself) must raise, not be passed through or silently dropped."""
+    with pytest.raises(exceptions.InvalidSymbol):
+        normalize_symbol(exchanges.NSE, 'RELI:ANCE')
 
 
 def test_normalize_symbol_rejects_malformed_ticker():
@@ -178,6 +197,29 @@ def test_candles_delete_controller_accepts_bare_ticker(monkeypatch):
 
     assert response.status_code == 200
     assert calls == [(exchanges.NSE, 'RELIANCE-INR')]
+
+
+def test_candles_get_controller_rejects_invalid_symbol_with_422(monkeypatch):
+    """`POST /candles/get` must translate `InvalidSymbol` into a 422 instead of
+    letting it escape as an unhandled 500 (jesse#75 review finding)."""
+    monkeypatch.setattr(candles_controller.jh, 'validate_cwd', lambda: None)
+
+    from jesse.services.web import GetCandlesRequestJson
+
+    request_json = GetCandlesRequestJson(
+        id='get-id', exchange=exchanges.NSE, symbol='RELI ANCE', timeframe='1D'
+    )
+    response = candles_controller.get_candles(request_json)
+
+    assert response.status_code == 422
+
+
+def test_candles_export_controller_rejects_invalid_symbol_with_422():
+    """`POST /candles/export` must translate `InvalidSymbol` into a 422 instead of
+    letting it escape as an unhandled 500 (jesse#75 review finding)."""
+    response = candles_controller.export_candles(exchange=exchanges.NSE, symbol='RELI ANCE')
+
+    assert response.status_code == 422
 
 
 # --------------------------------------------------------------------------------------
