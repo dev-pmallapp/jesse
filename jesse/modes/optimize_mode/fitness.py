@@ -3,19 +3,24 @@ from math import log10
 import jesse.helpers as jh
 from jesse.research.backtest import _isolated_backtest as isolated_backtest
 from jesse.services import logger
+from jesse.services.simulation_assumptions import default_annualization_for_exchange
 import numpy as np
 from jesse import exceptions
 
 
 def _formatted_inputs_for_isolated_backtest(user_config, routes):
     exchange_config = user_config['exchange']
+    exchange_name = routes[0]['exchange']
     # Format input parameters required for backtest simulation
     return {
         'starting_balance': exchange_config['balance'],
         'fee': exchange_config['fee'],
         'type': exchange_config['type'],
         'simulation_model': exchange_config.get('simulation_model'),
-        'annualization': exchange_config.get('annualization', 365),
+        # Default to the exchange's registered annualization (252 for NSE/BSE) rather
+        # than always assuming crypto's 365-day calendar when the dashboard/CLI config
+        # omitted it explicitly.
+        'annualization': exchange_config.get('annualization', default_annualization_for_exchange(exchange_name)),
         'futures_leverage': exchange_config.get('futures_leverage', 1),
         'futures_leverage_mode': exchange_config.get('futures_leverage_mode', 'cross'),
         'exchange': routes[0]['exchange'],

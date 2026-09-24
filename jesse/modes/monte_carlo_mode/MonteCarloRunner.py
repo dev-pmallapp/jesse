@@ -8,6 +8,7 @@ import jesse.services.logger as logger
 from jesse import exceptions
 from jesse.services.redis import sync_publish, is_process_active
 from jesse.services.progressbar import Progressbar
+from jesse.services.simulation_assumptions import default_annualization_for_exchange
 from jesse.research.monte_carlo import (
     monte_carlo_trades,
     monte_carlo_candles,
@@ -201,7 +202,11 @@ class MonteCarloRunner:
             'num_scenarios': self.num_scenarios,
             'exchange_type': self.user_config['exchange']['type'],
             'simulation_model': self.user_config['exchange'].get('simulation_model'),
-            'annualization': self.user_config['exchange'].get('annualization', 365),
+            # Dashboard-display only, but should still reflect the exchange's registered
+            # annualization (252 for NSE/BSE) rather than always assuming 365.
+            'annualization': self.user_config['exchange'].get(
+                'annualization', default_annualization_for_exchange(self.routes[0]['exchange'])
+            ),
             'leverage_mode': self.user_config['exchange'].get('futures_leverage_mode', 'N/A'),
             'leverage': self.user_config['exchange'].get('futures_leverage', 'N/A'),
             'cpu_cores': self.cpu_cores,
@@ -218,7 +223,9 @@ class MonteCarloRunner:
             'fee': exchange.get('fee', self.user_config.get('fee', 0.0005)),
             'type': exchange.get('type', 'futures'),
             'simulation_model': exchange.get('simulation_model'),
-            'annualization': exchange.get('annualization', 365),
+            # Default to the exchange's registered annualization (252 for NSE/BSE) rather
+            # than always assuming crypto's 365-day calendar when the session omitted it.
+            'annualization': exchange.get('annualization', default_annualization_for_exchange(self.routes[0]['exchange'])),
             'futures_leverage': exchange.get('futures_leverage', 1),
             'futures_leverage_mode': exchange.get('futures_leverage_mode', 'cross'),
             'warm_up_candles': self.user_config.get('warm_up_candles', 210),

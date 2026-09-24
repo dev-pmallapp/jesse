@@ -6,7 +6,7 @@ import numpy as np
 from jesse.services import candle_service, exchange_service, order_service, position_service
 from jesse.services import charts
 from jesse.services.validators import validate_routes
-from jesse.services.simulation_assumptions import resolve_annualization
+from jesse.services.simulation_assumptions import resolve_annualization_for_exchange
 from jesse.modes.backtest_mode import simulator
 from jesse.config import config as jesse_config, reset_config, set_config
 from jesse.routes import router
@@ -79,6 +79,8 @@ def backtest(
         'fee': 0.005,
         'type': 'futures',
         'simulation_model': 'perpetual_futures',
+        # Optional. When omitted, it defaults to the `exchange`'s registered
+        # annualization (365 for crypto exchanges, 252 for NSE/BSE/etc.)
         'annualization': 365,
         'futures_leverage': 3,
         'futures_leverage_mode': 'cross',
@@ -280,7 +282,9 @@ def _execute_isolated_backtest(
         'total': 0,
         'win_rate': 0,
         'net_profit_percentage': 0,
-        'annualization': int(resolve_annualization(config)),
+        # Fall back to the exchange's registered annualization (e.g. 252 for NSE/BSE)
+        # rather than always assuming crypto's 365-day calendar.
+        'annualization': int(resolve_annualization_for_exchange(config, config['exchange'])),
     }
     result = {
         'metrics': empty_metrics,
@@ -330,7 +334,9 @@ def _format_config(config):
         'fee': config['fee'],
         'type': exchange_type,
         'simulation_model': simulation_model.value,
-        'annualization': int(resolve_annualization(config)),
+        # Fall back to the exchange's registered annualization (e.g. 252 for NSE/BSE)
+        # rather than always assuming crypto's 365-day calendar.
+        'annualization': int(resolve_annualization_for_exchange(config, config['exchange'])),
         'name': config['exchange'],
     }
     # futures exchange has different config, so:

@@ -9,6 +9,7 @@ import jesse.helpers as jh
 import jesse.services.logger as logger
 from jesse import exceptions
 from jesse.services.redis import sync_publish
+from jesse.services.simulation_assumptions import default_annualization_for_exchange
 from jesse.modes.optimize_mode.fitness import get_fitness
 from jesse.routes import router
 from jesse.services.progressbar import Progressbar
@@ -347,7 +348,11 @@ class Optimizer:
             'objective_function': jh.get_config('env.optimization.objective_function', 'sharpe'),
             'exchange_type': self.user_config['exchange']['type'],
             'simulation_model': self.user_config['exchange'].get('simulation_model'),
-            'annualization': self.user_config['exchange'].get('annualization', 365),
+            # Dashboard-display only, but should still reflect the exchange's registered
+            # annualization (252 for NSE/BSE) rather than always assuming 365.
+            'annualization': self.user_config['exchange'].get(
+                'annualization', default_annualization_for_exchange(router.routes[0].exchange)
+            ),
             'leverage_mode': self.user_config['exchange'].get('futures_leverage_mode', 'N/A'),
             'leverage': self.user_config['exchange'].get('futures_leverage', 'N/A'),
             'cpu_cores': self.cpu_cores,

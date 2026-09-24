@@ -7,7 +7,7 @@ import os
 from datetime import datetime
 import jesse.helpers as jh
 from jesse.research import backtest
-from jesse.services.simulation_assumptions import resolve_annualization
+from jesse.services.simulation_assumptions import resolve_annualization_for_exchange
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
 from matplotlib import pyplot as plt
@@ -182,7 +182,9 @@ def _run_monte_carlo_simulation(
     num_scenarios: int, progress_bar: bool, cpu_cores: int, started_ray_here: bool, progress_callback=None, result_callback=None
 ) -> dict:
     try:
-        annualization = int(resolve_annualization(config))
+        # Same-format config as research.backtest(): default to the exchange's
+        # registered annualization (252 for NSE/BSE) instead of always assuming 365.
+        annualization = int(resolve_annualization_for_exchange(config, config['exchange']))
         original_result = _run_original_backtest(
             config, routes, data_routes, candles, warmup_candles,
             hyperparameters, fast_mode, benchmark

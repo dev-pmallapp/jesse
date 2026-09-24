@@ -6,6 +6,7 @@ from typing import Dict, List, Optional
 import jesse.helpers as jh
 from jesse import exceptions
 from jesse.services.redis import sync_publish, is_process_active
+from jesse.services.simulation_assumptions import default_annualization_for_exchange
 from jesse.models.SignificanceTestSession import (
     update_significance_test_session_status,
     update_significance_test_session_results,
@@ -103,7 +104,11 @@ class SignificanceTestRunner:
             'fee': 0,
             'type': exchange_config.get('type', 'futures'),
             'simulation_model': exchange_config.get('simulation_model'),
-            'annualization': exchange_config.get('annualization', 365),
+            # Default to the exchange's registered annualization (252 for NSE/BSE) rather
+            # than always assuming crypto's 365-day calendar when the session omitted it.
+            'annualization': exchange_config.get(
+                'annualization', default_annualization_for_exchange(self.routes[0]['exchange'])
+            ),
             'futures_leverage': 1,
             'futures_leverage_mode': 'cross',
             'warm_up_candles': self.user_config.get('warm_up_candles', 210),
