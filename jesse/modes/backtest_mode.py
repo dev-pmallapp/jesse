@@ -16,7 +16,7 @@ from jesse.services import charts
 from jesse.services import report
 from jesse.services import candle_service
 from jesse.services.file import store_logs
-from jesse.services.validators import validate_routes
+from jesse.services.validators import validate_routes, is_daily_bars_only
 from jesse.store import store
 from jesse.services import logger
 from jesse.services.failure import register_custom_exception_handler
@@ -609,8 +609,19 @@ def _timestamp_replay_common_start(candles: dict) -> int:
 def _timestamp_bucket_generation_schedule(
         candles: np.ndarray,
         generating_timeframes: list[tuple[str, int]],
+        daily_bars_only: bool = False,
 ) -> dict[int, list[tuple[str, int]]]:
-    """Map each completed nonempty clock bucket to its first observed availability event."""
+    """Map each completed nonempty clock bucket to its first observed availability event.
+
+    `daily_bars_only` (NSE/BSE-style sources, see `is_daily_bars_only`) is the one exception:
+    each stored row IS a whole trading session (imported as a single 15:29 IST close), so its
+    own row already completes its bucket instead of needing a later row to observe the boundary
+    being crossed. Releasing at the bucket's own last row (instead of searching for the first
+    event on/after `bucket_end`) also fixes the final session's bucket never being released,
+    since there is no later row to search past it. Every other source keeps the original
+    first-observed-availability rule untouched (see tests/test_parent_strategy.py's sparse-gap
+    coverage and TestLongSparseGap).
+    """
     schedule: dict[int, list[tuple[str, int]]] = {}
     event_times = candles[:, 0].astype(np.int64) + 60_000
     timestamps = candles[:, 0].astype(np.int64)
@@ -619,9 +630,14 @@ def _timestamp_bucket_generation_schedule(
         bucket_starts = (timestamps // timeframe_ms) * timeframe_ms
         boundaries = np.flatnonzero(np.diff(bucket_starts)) + 1
         starts = np.concatenate(([0], boundaries))
-        for start in starts:
-            bucket_end = int(bucket_starts[start]) + timeframe_ms
-            release_index = int(np.searchsorted(event_times, bucket_end, side='left'))
+        if daily_bars_only:
+            bucket_ends = np.concatenate((boundaries, [len(bucket_starts)]))
+        for bucket_index, start in enumerate(starts):
+            if daily_bars_only:
+                release_index = int(bucket_ends[bucket_index]) - 1
+            else:
+                bucket_end = int(bucket_starts[start]) + timeframe_ms
+                release_index = int(np.searchsorted(event_times, bucket_end, side='left'))
             if release_index < len(candles):
                 schedule.setdefault(release_index, []).append(
                     (timeframe, int(start))
@@ -649,7 +665,11 @@ def _build_timestamp_replay_plan(
             })
             event['sources'].append((key, index))
 
-        schedule = _timestamp_bucket_generation_schedule(candle_array, generating_timeframes)
+        schedule = _timestamp_bucket_generation_schedule(
+            candle_array,
+            generating_timeframes,
+            daily_bars_only=is_daily_bars_only(candles[key]['exchange']),
+        )
         for release_index, updates in schedule.items():
             if release_index < first_trading_index:
                 continue
@@ -809,7 +829,11 @@ def _apply_timestamp_replay_event(
                 with_generation=False,
             )
             available_at = int(generated[0]) + timeframe_ms
-            if available_at == event['time']:
+            # A daily-only source's bucket is released by its own row (see
+            # `_timestamp_bucket_generation_schedule`), so `available_at` (the
+            # generated bucket's own boundary) never equals this row's event
+            # time (its session close) — that row's release IS the real close.
+            if available_at == event['time'] or is_daily_bars_only(exchange):
                 updated_routes.add((exchange, symbol, timeframe))
 
     return updated_routes, source_pairs
@@ -890,7 +914,12 @@ def _apply_timestamp_replay_batch(
                 with_execution=False,
                 with_generation=False,
             )
-            if event is endpoint and int(generated[0]) + timeframe_ms == endpoint['time']:
+            # See `_apply_timestamp_replay_event`: a daily-only source's own row is
+            # its bucket's real close, so `available_at` never equals the event time.
+            if event is endpoint and (
+                int(generated[0]) + timeframe_ms == endpoint['time']
+                or is_daily_bars_only(exchange)
+            ):
                 updated_routes.add((exchange, symbol, timeframe))
 
     store.app.time = float(endpoint['time'])
@@ -2196,20 +2225,31 @@ def _update_all_routes_a_partial_candle(
         with_generation=False,
     )
 
+    # NSE/BSE-style sources store one row per whole session, so the minute-count
+    # slicing below (which assumes one 1m storage row per elapsed minute) can't
+    # locate the bucket's rows. The partial candle itself already IS the (only)
+    # observed row of its 1D bucket, so re-bucket it directly instead.
+    daily_bars_only = is_daily_bars_only(exchange)
     for route in router.all_formatted_routes:
         timeframe = route['timeframe']
         if route['exchange'] != exchange or route['symbol'] != symbol:
             continue
         if timeframe == '1m':
             continue
-        tf_minutes = TIMEFRAME_TO_ONE_MINUTES[timeframe]
-        number_of_needed_candles = int(storable_temp_candle[0] % (tf_minutes * 60_000) // 60000) + 1
-        candles_1m = candle_service.get_candles(exchange, symbol, '1m')[-number_of_needed_candles:]
-        generated_candle = candle_service.generate_candle_from_one_minutes(
-            timeframe,
-            candles_1m,
-            accept_forming_candles=True
-        )
+        if daily_bars_only:
+            generated_candle = candle_service.generate_candle_from_observed_minutes(
+                timeframe,
+                storable_temp_candle[None, :],
+            )
+        else:
+            tf_minutes = TIMEFRAME_TO_ONE_MINUTES[timeframe]
+            number_of_needed_candles = int(storable_temp_candle[0] % (tf_minutes * 60_000) // 60000) + 1
+            candles_1m = candle_service.get_candles(exchange, symbol, '1m')[-number_of_needed_candles:]
+            generated_candle = candle_service.generate_candle_from_one_minutes(
+                timeframe,
+                candles_1m,
+                accept_forming_candles=True
+            )
         candle_service.add_candle(
             generated_candle,
             exchange,

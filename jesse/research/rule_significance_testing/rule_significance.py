@@ -27,7 +27,7 @@ import warnings
 from typing import Dict, List, Optional
 
 import numpy as np
-from jesse.services.simulation_assumptions import resolve_annualization
+from jesse.services.simulation_assumptions import resolve_annualization_for_exchange
 
 from .common import (
     MIN_OBSERVATIONS,
@@ -222,7 +222,9 @@ def rule_significance_test(
     # p-value: fraction of simulated means that equalled or exceeded the
     # observed mean under the null hypothesis.
     p_value = float(np.mean(sim_means >= observed_mean))
-    annualization = int(resolve_annualization(config))
+    # Same-format config as research.backtest(): default to the exchange's
+    # registered annualization (252 for NSE/BSE) instead of always assuming 365.
+    annualization = int(resolve_annualization_for_exchange(config, config['exchange']))
     annualization_factor = _elapsed_annualization_factor(
         n_obs,
         int(bar_timestamps[0]),

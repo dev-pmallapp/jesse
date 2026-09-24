@@ -2,6 +2,7 @@ from enum import Enum, IntEnum
 from typing import Mapping, Any
 
 from jesse.exceptions import InvalidConfig
+from jesse.info import exchange_info
 
 
 class SimulationModel(str, Enum):
@@ -54,6 +55,26 @@ def resolve_simulation_model(
         fields = ', '.join(f'{name}={candidate.value!r}' for name, candidate in supplied)
         raise InvalidConfig(f'Conflicting simulation model fields: {fields}')
     return model
+
+
+def default_annualization_for_exchange(exchange_name: Any) -> int:
+    """
+    Registered 252-trading-day markets (NSE, BSE, Massive Stocks, ...) must annualize
+    Sharpe/Sortino/CAGR over their trading-day count rather than the crypto-oriented
+    365-day calendar default. Registered crypto exchanges get 365 from exchange_info's
+    setdefault; unregistered names (e.g. the 'Warmup Exchange' test fixture) get the
+    365 fallback here.
+    """
+    return exchange_info.get(exchange_name, {}).get('annualization', 365)
+
+
+def resolve_annualization_for_exchange(values: Mapping[str, Any], exchange_name: Any) -> Annualization:
+    """
+    Like resolve_annualization(), but defaults to the named exchange's registered
+    annualization (252 for NSE/BSE/etc.) instead of always assuming 365. An explicit
+    values['annualization'] still wins.
+    """
+    return resolve_annualization(values, default=default_annualization_for_exchange(exchange_name))
 
 
 def resolve_annualization(values: Mapping[str, Any], default: int = Annualization.CALENDAR_365) -> Annualization:
