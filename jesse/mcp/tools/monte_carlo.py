@@ -41,8 +41,8 @@ def register_monte_carlo_tools(mcp):
 
     @mcp.tool()
     def create_monte_carlo_draft(
-        exchange: str = "Binance Perpetual Futures",
-        routes: str = '[{"exchange": "Binance Perpetual Futures", "strategy": "ExampleStrategy", "symbol": "BTC-USDT", "timeframe": "4h"}]',
+        exchange: str = "NSE",
+        routes: str = '[{"exchange": "NSE", "strategy": "ExampleStrategy", "symbol": "RELIANCE-INR", "timeframe": "4h"}]',
         data_routes: str = '[]',
         start_date: str = "2024-01-01",
         finish_date: str = "2024-03-01",
@@ -68,7 +68,7 @@ def register_monte_carlo_tools(mcp):
         which is the most informative variant for most strategies.
 
         Parameters:
-            exchange: Exchange name (default "Binance Perpetual Futures").
+            exchange: Exchange name (default "NSE").
             routes: JSON string array of route objects:
                 [{"exchange": "...", "strategy": "...", "symbol": "...", "timeframe": "..."}]
             data_routes: JSON string array (default "[]").

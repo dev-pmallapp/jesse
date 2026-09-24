@@ -8,8 +8,10 @@ from jesse.enums import exchanges, timeframes
 
 
 def test_app_currency():
+    # SANDBOX has no `exchange_info` settlement_currency override, so app_currency() falls
+    # back to parsing the quote asset out of the symbol - the behavior under test here.
     router.initiate(
-        [{'exchange': exchanges.BINANCE_SPOT, 'symbol': 'ETH-USD', 'timeframe': timeframes.HOUR_3, 'strategy': 'Test19'}])
+        [{'exchange': exchanges.SANDBOX, 'symbol': 'ETH-USD', 'timeframe': timeframes.HOUR_3, 'strategy': 'Test19'}])
     assert jh.app_currency() == 'USD'
 
 

@@ -80,25 +80,25 @@ def backtest(
         'type': 'futures',
         'simulation_model': 'perpetual_futures',
         # Optional. When omitted, it defaults to the `exchange`'s registered
-        # annualization (365 for crypto exchanges, 252 for NSE/BSE/etc.)
-        'annualization': 365,
+        # annualization (252 for NSE/BSE).
+        'annualization': 252,
         'futures_leverage': 3,
         'futures_leverage_mode': 'cross',
-        'exchange': 'Binance',
+        'exchange': 'NSE',
         'warm_up_candles': 0
     }
 
     Example `route`:
-    [{'exchange': 'Bybit USDT Perpetual', 'strategy': 'A1', 'symbol': 'BTC-USDT', 'timeframe': '1m'}]
+    [{'exchange': 'NSE', 'strategy': 'A1', 'symbol': 'RELIANCE-INR', 'timeframe': '1D'}]
 
     Example `data_route`:
-    [{'exchange': 'Bybit USDT Perpetual', 'symbol': 'BTC-USDT', 'timeframe': '3m'}]
+    [{'exchange': 'NSE', 'symbol': 'RELIANCE-INR', 'timeframe': '1D'}]
 
     Example `candles`:
     {
-        'Binance-BTC-USDT': {
-            'exchange': 'Binance',
-            'symbol': 'BTC-USDT',
+        'NSE-RELIANCE-INR': {
+            'exchange': 'NSE',
+            'symbol': 'RELIANCE-INR',
             'candles': np.array([]),
         },
     }

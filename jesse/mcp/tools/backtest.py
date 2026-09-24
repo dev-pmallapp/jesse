@@ -40,8 +40,8 @@ def register_backtest_tools(mcp):
 
     @mcp.tool()
     def create_backtest_draft(
-        exchange: str = "Binance Perpetual Futures",
-        routes: str = '[{"exchange": "Binance Perpetual Futures", "strategy": "ExampleStrategy", "symbol": "BTC-USDT", "timeframe": "4h"}]',
+        exchange: str = "NSE",
+        routes: str = '[{"exchange": "NSE", "strategy": "ExampleStrategy", "symbol": "RELIANCE-INR", "timeframe": "4h"}]',
         data_routes: str = '[]',
         start_date: str = "2024-01-01",
         finish_date: str = "2024-03-01",
@@ -66,18 +66,12 @@ def register_backtest_tools(mcp):
 
         Parameters:
             exchange (str): Exchange name for backtesting. Supported exchanges include:
-                - "Binance Perpetual Futures" (default)
-                - "Bybit USDT Perpetual"
-                - "Bybit USDC Perpetual"
-                - "Gate USDT Perpetual"
-                - "Binance Spot"
-                - "Bybit Spot"
-                - "Coinbase Spot"
-                - "Bitfinex Spot"
+                - "NSE" (default)
+                - "BSE"
             routes (str): JSON string array of route configuration objects. Each route defines:
                 - exchange: Exchange name (must match the main exchange parameter)
                 - strategy: Strategy class name (e.g., "MyStrategy")
-                - symbol: Trading pair (e.g., "BTC-USDT")
+                - symbol: Trading pair (e.g., "RELIANCE-INR")
                 - timeframe: Candle timeframe (e.g., "1h", "4h", "1D")
                 Shape: Array of objects with required fields: exchange, strategy, symbol, timeframe
             data_routes (str): JSON string array of data route objects for additional data feeds.
@@ -113,8 +107,8 @@ def register_backtest_tools(mcp):
 
         Example:
             >>> draft = create_backtest_draft(
-            ...     exchange="Binance Spot",
-            ...     routes='[{"exchange": "Binance Spot", "strategy": "MyStrategy", "symbol": "BTC-USDT", "timeframe": "4h"}]',
+            ...     exchange="NSE",
+            ...     routes='[{"exchange": "NSE", "strategy": "MyStrategy", "symbol": "RELIANCE-INR", "timeframe": "4h"}]',
             ...     start_date="2024-01-01",
             ...     finish_date="2024-12-31"
             ... )
@@ -182,7 +176,7 @@ def register_backtest_tools(mcp):
             >>> # Add a new route to existing session
             >>> session = get_backtest_session("550e8400-e29b-41d4-a716-446655440000")
             >>> current_state = session["data"]["session"]["state"]["state"]
-            >>> new_route = {"exchange": "Binance Spot", "strategy": "MyStrategy", "symbol": "ETH-USDT", "timeframe": "1h"}
+            >>> new_route = {"exchange": "NSE", "strategy": "MyStrategy", "symbol": "TCS-INR", "timeframe": "1h"}
             >>> current_state["form"]["routes"].append(new_route)
             >>> import json
             >>> updated_state = json.dumps(current_state)
@@ -210,7 +204,7 @@ def register_backtest_tools(mcp):
             title (str, optional): Short session title.
             description (str, optional): Detailed note or markdown summary.
             strategy_codes (str, optional): JSON object string of strategy code snapshots.
-                Shape: {"Binance Perpetual Futures-BTC-USDT": "strategy code"}
+                Shape: {"NSE-RELIANCE-INR": "strategy code"}
 
         Returns:
             dict: Update result with status, session_id, notes fields, and message.
@@ -219,7 +213,7 @@ def register_backtest_tools(mcp):
             >>> update_backtest_notes(
             ...     "550e8400-e29b-41d4-a716-446655440000",
             ...     title="AI Backtest: breakout filter",
-            ...     description="Tests a stricter trend filter on BTC-USDT 4h."
+            ...     description="Tests a stricter trend filter on RELIANCE-INR 4h."
             ... )
         """
         return update_backtest_notes_service(
@@ -452,9 +446,9 @@ def register_backtest_tools(mcp):
                 "backtest_id": "uuid-string",
                 "routes": [
                     {
-                        "exchange": "Binance Perpetual Futures",
+                        "exchange": "NSE",
                         "strategy": "MyStrategy",
-                        "symbol": "BTC-USDT",
+                        "symbol": "RELIANCE-INR",
                         "timeframe": "4h"
                     }
                 ],

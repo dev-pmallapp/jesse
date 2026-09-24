@@ -10,232 +10,9 @@ code organization and reusability.
 
 import requests
 import uuid
-from hashlib import sha256
-from pathlib import Path
-from tempfile import TemporaryFile
-from typing import Literal, Optional
+from typing import Optional
 from .auth import hash_password
 import jesse.mcp.mcp_config as mcp_config
-from jesse.services.custom_candle_import import CustomCandleImportError, clean_custom_candle_csv
-
-
-# Multi-year CSV validation can outlast ordinary MCP reads, but remains bounded for a stalled backend.
-CUSTOM_CSV_REQUEST_TIMEOUT_SECONDS = 300
-
-
-def _custom_csv_path(file_path: str) -> Path:
-    path = Path(file_path).expanduser()
-    if not path.is_absolute():
-        raise ValueError('file_path must be an absolute path')
-    path = path.resolve(strict=True)
-    if not path.is_file() or path.suffix.lower() != '.csv':
-        raise ValueError('file_path must point to a CSV file')
-    return path
-
-
-def _custom_csv_form(symbol: str) -> dict[str, str]:
-    return {
-        'symbol': symbol,
-        'timestamp_format': 'unix_ms',
-        'timestamp_column': 'timestamp',
-        'open_column': 'open',
-        'close_column': 'close',
-        'high_column': 'high',
-        'low_column': 'low',
-        'volume_column': 'volume',
-    }
-
-
-def _clean_custom_csv(
-    file_path: str,
-    timestamp_format: str,
-    timestamp_column: str,
-    open_column: str,
-    close_column: str,
-    high_column: str,
-    low_column: str,
-    volume_column: str,
-    invalid_row_policy: Literal['reject', 'drop'],
-):
-    path = _custom_csv_path(file_path)
-    cleaned_file = TemporaryFile(mode='w+b')
-    try:
-        with path.open('rb') as source_file:
-            report = clean_custom_candle_csv(
-                source_file,
-                cleaned_file,
-                timestamp_format,
-                {
-                    'timestamp': timestamp_column,
-                    'open': open_column,
-                    'close': close_column,
-                    'high': high_column,
-                    'low': low_column,
-                    'volume': volume_column,
-                },
-                invalid_row_policy,
-            )
-        cleaned_file.seek(0)
-        return cleaned_file, report
-    except Exception:
-        cleaned_file.close()
-        raise
-
-
-def preview_custom_candle_csv_service(
-    file_path: str,
-    symbol: str,
-    timestamp_format: str = 'auto',
-    timestamp_column: str = 'timestamp',
-    open_column: str = 'open',
-    close_column: str = 'close',
-    high_column: str = 'high',
-    low_column: str = 'low',
-    volume_column: str = 'volume',
-) -> dict:
-    """Preview deterministic cleanup and verify the normalized output with Jesse's import API."""
-    try:
-        cleaned_file, report = _clean_custom_csv(
-            file_path,
-            timestamp_format,
-            timestamp_column,
-            open_column,
-            close_column,
-            high_column,
-            low_column,
-            volume_column,
-            'drop',
-        )
-        try:
-            backend_preview = None
-            if report['can_import_with_drop']:
-                response = requests.post(
-                    f'{mcp_config.JESSE_API_URL}/candles/custom/preview',
-                    data=_custom_csv_form(symbol),
-                    files={'file': ('cleaned-candles.csv', cleaned_file, 'text/csv')},
-                    headers={'Authorization': hash_password(mcp_config.JESSE_PASSWORD)},
-                    timeout=CUSTOM_CSV_REQUEST_TIMEOUT_SECONDS,
-                )
-                if response.status_code != 200:
-                    return {
-                        'status': 'error',
-                        'action': 'custom_candle_csv_preview_failed',
-                        'error_type': 'api_error',
-                        'cleaning_report': report,
-                        'message': f'Jesse rejected the normalized CSV: {response.text}',
-                    }
-                backend_preview = response.json().get('data')
-            return {
-                'status': 'success',
-                'action': 'custom_candle_csv_previewed',
-                'file_path': str(_custom_csv_path(file_path)),
-                'symbol': symbol.strip().upper(),
-                'cleaning_report': report,
-                'import_preview': backend_preview,
-                'message': (
-                    'Preview complete. Choose invalid_row_policy="reject" or "drop" when importing; '
-                    'conflicting duplicate timestamps must be fixed in the source file.'
-                ),
-            }
-        finally:
-            cleaned_file.close()
-    except (CustomCandleImportError, OSError, ValueError) as exc:
-        return {
-            'status': 'error',
-            'action': 'custom_candle_csv_preview_failed',
-            'error_type': 'validation_error',
-            'message': str(exc),
-        }
-    except requests.RequestException as exc:
-        return {
-            'status': 'error',
-            'action': 'custom_candle_csv_preview_failed',
-            'error_type': 'network_error',
-            'message': f'Could not reach Jesse: {exc}',
-        }
-
-
-def clean_and_import_custom_candle_csv_service(
-    file_path: str,
-    symbol: str,
-    invalid_row_policy: Literal['reject', 'drop'],
-    timestamp_format: str = 'auto',
-    timestamp_column: str = 'timestamp',
-    open_column: str = 'open',
-    close_column: str = 'close',
-    high_column: str = 'high',
-    low_column: str = 'low',
-    volume_column: str = 'volume',
-) -> dict:
-    """Clean one local CSV and import its canonical rows through Jesse's custom-data endpoint."""
-    try:
-        cleaned_file, report = _clean_custom_csv(
-            file_path,
-            timestamp_format,
-            timestamp_column,
-            open_column,
-            close_column,
-            high_column,
-            low_column,
-            volume_column,
-            invalid_row_policy,
-        )
-        try:
-            if not report['valid']:
-                return {
-                    'status': 'error',
-                    'action': 'custom_candle_csv_import_failed',
-                    'error_type': 'validation_error',
-                    'cleaning_report': report,
-                    'message': (
-                        'The selected cleaning policy cannot safely import this file. '
-                        'Review invalid rows or conflicting duplicate timestamps.'
-                    ),
-                }
-            response = requests.post(
-                f'{mcp_config.JESSE_API_URL}/candles/custom/import',
-                data=_custom_csv_form(symbol),
-                files={'file': ('cleaned-candles.csv', cleaned_file, 'text/csv')},
-                headers={'Authorization': hash_password(mcp_config.JESSE_PASSWORD)},
-                timeout=CUSTOM_CSV_REQUEST_TIMEOUT_SECONDS,
-            )
-            if response.status_code != 201:
-                return {
-                    'status': 'error',
-                    'action': 'custom_candle_csv_import_failed',
-                    'error_type': 'api_error',
-                    'cleaning_report': report,
-                    'message': f'Jesse rejected the normalized CSV: {response.text}',
-                }
-            imported = response.json().get('data', {})
-            return {
-                'status': 'success',
-                'action': 'custom_candle_csv_imported',
-                'exchange': imported.get('exchange', 'Custom Data'),
-                'symbol': imported.get('symbol', symbol.strip().upper()),
-                'timeframe': '1m',
-                'cleaning_report': report,
-                'import_report': imported,
-                'message': (
-                    f'Imported {report["cleaned_row_count"]} cleaned one-minute candles as Custom Data.'
-                ),
-            }
-        finally:
-            cleaned_file.close()
-    except (CustomCandleImportError, OSError, ValueError) as exc:
-        return {
-            'status': 'error',
-            'action': 'custom_candle_csv_import_failed',
-            'error_type': 'validation_error',
-            'message': str(exc),
-        }
-    except requests.RequestException as exc:
-        return {
-            'status': 'error',
-            'action': 'custom_candle_csv_import_failed',
-            'error_type': 'network_error',
-            'message': f'Could not reach Jesse: {exc}',
-        }
 
 
 def import_candles_service(
@@ -252,8 +29,8 @@ def import_candles_service(
     the data has landed.
 
     Args:
-        exchange: Exchange name (e.g., 'Binance Spot', 'Bybit USDT Perpetual')
-        symbol: Trading symbol (e.g., 'BTC-USDT', 'ETH-USDT')
+        exchange: Exchange name (e.g., 'NSE', 'BSE')
+        symbol: Trading symbol (e.g., 'RELIANCE-INR', 'TCS-INR')
         start_date: Start date in YYYY-MM-DD format
         import_id: Optional import ID to reuse for retrying a previous import.
                    If None, a new unique ID is generated.
@@ -436,8 +213,8 @@ def get_candles_service(
     Gets historical candle data for the specified exchange, symbol, and timeframe.
 
     Args:
-        exchange: Exchange name (e.g., 'Binance', 'Bybit')
-        symbol: Trading symbol (e.g., 'BTC-USDT', 'ETH-USDT')
+        exchange: Exchange name (e.g., 'NSE', 'BSE')
+        symbol: Trading symbol (e.g., 'RELIANCE-INR', 'TCS-INR')
         timeframe: Timeframe (e.g., '1m', '5m', '1h', '1D', '1W', '1M')
 
     Returns:
@@ -647,8 +424,8 @@ def delete_candles_service(
     Permanently deletes candle data for the specified exchange and symbol.
 
     Args:
-        exchange: Exchange name (e.g., 'binance', 'bybit')
-        symbol: Trading symbol (e.g., 'BTC-USDT', 'ETH-USDT')
+        exchange: Exchange name (e.g., 'NSE', 'BSE')
+        symbol: Trading symbol (e.g., 'RELIANCE-INR', 'TCS-INR')
 
     Returns:
         Success confirmation or error message
@@ -714,7 +491,7 @@ def search_symbols_service(exchange: str, query: str, limit: int = 20) -> dict:
     found in the Dashboard can be found here and vice versa.
 
     Args:
-        exchange: Candle source name exactly as Jesse lists it, e.g. "Massive Stocks".
+        exchange: Candle source name exactly as Jesse lists it, e.g. "NSE".
         query: Ticker prefix or part of an instrument name, e.g. "MSFT" or "microsoft".
         limit: Maximum number of matches to return (1-200).
 
@@ -782,8 +559,8 @@ def copy_candles_service(
     """
     Duplicate stored candles under another exchange (and optionally symbol).
 
-    Lets a backtest select the same data as a different market, e.g. Massive Stocks
-    SPY-USD copied to a crypto exchange name so its simulation model applies.
+    Lets a backtest select the same data under a different exchange name, e.g. copy
+    an NSE-imported symbol to BSE to compare the two venues.
 
     Returns:
         Copy summary or error message

@@ -102,7 +102,8 @@ class OrdersState:
         if use_exchange_id:
             return fnc.find(lambda o: o.exchange_id == id, self.storage[key])
 
-        # a client_id may arrive as an int (e.g. Binance algo ids); coerce before matching
+        # a client_id may arrive as an int (some live-trading exchanges use numeric algo ids);
+        # coerce before matching
         id = str(id) if id is not None else ''
 
         # make sure id (client_id) is not an empty string

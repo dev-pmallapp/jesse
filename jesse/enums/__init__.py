@@ -65,54 +65,11 @@ class order_types:
 @dataclass
 class exchanges:
     SANDBOX = 'Sandbox'
-    CUSTOM_DATA = 'Custom Data'
-    MASSIVE_STOCKS = 'Massive Stocks'
-    MASSIVE_CURRENCIES = 'Massive Currencies'
-    MASSIVE_INDICES = 'Massive Indices'
-    MASSIVE_FUTURES = 'Massive Futures'
     # Values MUST stay exactly 'NSE'/'BSE' - the India source registry
     # (historical_data/india/sources.py `create_source`) and `IndiaExchangeProvider`
     # key their source lookup on these exact strings.
     NSE = 'NSE'
     BSE = 'BSE'
-    COINBASE_SPOT = 'Coinbase Spot'
-    BITFINEX_SPOT = 'Bitfinex Spot'
-    BINANCE_SPOT = 'Binance Spot'
-    BINANCE_US_SPOT = 'Binance US Spot'
-    BINANCE_PERPETUAL_FUTURES = 'Binance Perpetual Futures'
-    BINANCE_PERPETUAL_FUTURES_TESTNET = 'Binance Perpetual Futures Testnet'
-    BYBIT_USDT_PERPETUAL = 'Bybit USDT Perpetual'
-    BYBIT_USDC_PERPETUAL = 'Bybit USDC Perpetual'
-    BYBIT_USDT_PERPETUAL_TESTNET = 'Bybit USDT Perpetual Testnet'
-    BYBIT_USDC_PERPETUAL_TESTNET = 'Bybit USDC Perpetual Testnet'
-    BYBIT_SPOT = 'Bybit Spot'
-    BYBIT_SPOT_TESTNET = 'Bybit Spot Testnet'
-    FTX_PERPETUAL_FUTURES = 'FTX Perpetual Futures'
-    FTX_SPOT = 'FTX Spot'
-    FTX_US_SPOT = 'FTX US Spot'
-    BITGET_SPOT = 'Bitget Spot'
-    BITGET_USDT_PERPETUAL = 'Bitget USDT Perpetual'
-    BITGET_USDT_PERPETUAL_TESTNET = 'Bitget USDT Perpetual Testnet'
-    DYDX_PERPETUAL = "Dydx Perpetual"
-    DYDX_PERPETUAL_TESTNET = "Dydx Perpetual Testnet"
-    APEX_OMNI_PERPETUAL_TESTNET = 'Apex Omni Perpetual Testnet'
-    APEX_OMNI_PERPETUAL = 'Apex Omni Perpetual'
-    GATE_USDT_PERPETUAL = 'Gate USDT Perpetual'
-    GATE_SPOT = 'Gate Spot'
-    HYPERLIQUID_PERPETUAL = 'Hyperliquid Perpetual'
-    HYPERLIQUID_PERPETUAL_TESTNET = 'Hyperliquid Perpetual Testnet'
-    LIGHTER_PERPETUAL = 'Lighter Perpetual'
-    LIGHTER_PERPETUAL_TESTNET = 'Lighter Perpetual Testnet'
-    KUCOIN_SPOT = 'KuCoin Spot'
-    KUCOIN_USDT_PERPETUAL = 'KuCoin USDT Perpetual'
-    KRAKEN_SPOT = 'Kraken Pro Spot'
-    KRAKEN_PERPETUAL = 'Kraken Pro Futures'
-    KRAKEN_PERPETUAL_TESTNET = 'Kraken Pro Futures Testnet'
-
-
-@dataclass
-class data_providers:
-    MASSIVE = 'Massive'
 
 
 @dataclass

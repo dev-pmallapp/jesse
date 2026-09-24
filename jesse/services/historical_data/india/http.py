@@ -105,7 +105,7 @@ class IndiaHttpClient:
                 # Catches connection/timeout failures as well as mid-download breakage
                 # (e.g. ChunkedEncodingError on a truncated zip) and other transport-level
                 # requests errors - none of these should ever escape as raw requests
-                # exceptions (mirrors massive_stocks.py's `_request_json`).
+                # exceptions.
                 if attempt < INDIA_REQUEST_RETRIES:
                     self._sleep(INDIA_RETRY_BACKOFF_SECONDS[attempt])
                     continue

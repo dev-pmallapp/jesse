@@ -4,7 +4,7 @@ import re
 from collections.abc import Iterator
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, Form
 from fastapi.responses import StreamingResponse
 from starlette.responses import JSONResponse
 from jesse.repositories import candle_repository
@@ -19,12 +19,6 @@ from jesse.services.web import (
     CopyCandlesRequestJson,
 )
 from jesse.services.redis import is_process_active
-from jesse.services.custom_candle_import import (
-    CustomCandleImportError,
-    import_custom_candle_csv,
-    normalize_custom_symbol,
-    scan_custom_candle_csv,
-)
 import jesse.helpers as jh
 
 router = APIRouter(prefix="/candles", tags=["Candles"], dependencies=[Depends(require_auth)])
@@ -44,7 +38,7 @@ def _safe_export_filename(exchange: str, symbol: str) -> str:
 
 
 def _stream_candle_csv(exchange: str, symbol: str) -> Iterator[str]:
-    """Encode bounded database batches into chunks compatible with custom-data import."""
+    """Encode bounded database batches into CSV chunks for a streaming download."""
     output = io.StringIO()
     writer = csv.writer(output, lineterminator='\n')
     writer.writerow(('timestamp', 'open', 'close', 'high', 'low', 'volume'))
@@ -72,72 +66,6 @@ def export_candles(
             'X-Content-Type-Options': 'nosniff',
         },
     )
-
-
-@router.post('/custom/preview')
-def preview_custom_candles(
-    file: Annotated[UploadFile, File()],
-    symbol: Annotated[str, Form()],
-    timestamp_format: Annotated[str, Form()] = 'auto',
-    timestamp_column: Annotated[str, Form()] = 'timestamp',
-    open_column: Annotated[str, Form()] = 'open',
-    high_column: Annotated[str, Form()] = 'high',
-    low_column: Annotated[str, Form()] = 'low',
-    close_column: Annotated[str, Form()] = 'close',
-    volume_column: Annotated[str, Form()] = 'volume',
-) -> JSONResponse:
-    """Validate an uploaded candle CSV without changing persisted data."""
-    try:
-        column_mapping = {
-            'timestamp': timestamp_column,
-            'open': open_column,
-            'high': high_column,
-            'low': low_column,
-            'close': close_column,
-            'volume': volume_column,
-        }
-        report = scan_custom_candle_csv(file.file, timestamp_format, column_mapping)
-        return JSONResponse({
-            'data': {
-                **report,
-                'symbol': normalize_custom_symbol(symbol),
-                'timeframe': '1m',
-            }
-        }, status_code=200)
-    except CustomCandleImportError as exc:
-        return JSONResponse({'error': str(exc)}, status_code=422)
-
-
-@router.post('/custom/import')
-def import_custom_candles(
-    file: Annotated[UploadFile, File()],
-    symbol: Annotated[str, Form()],
-    timestamp_format: Annotated[str, Form()] = 'auto',
-    timestamp_column: Annotated[str, Form()] = 'timestamp',
-    open_column: Annotated[str, Form()] = 'open',
-    high_column: Annotated[str, Form()] = 'high',
-    low_column: Annotated[str, Form()] = 'low',
-    close_column: Annotated[str, Form()] = 'close',
-    volume_column: Annotated[str, Form()] = 'volume',
-) -> JSONResponse:
-    """Validate and atomically persist an uploaded observed-candle CSV."""
-    try:
-        report = import_custom_candle_csv(
-            file.file,
-            symbol,
-            timestamp_format,
-            {
-                'timestamp': timestamp_column,
-                'open': open_column,
-                'high': high_column,
-                'low': low_column,
-                'close': close_column,
-                'volume': volume_column,
-            },
-        )
-        return JSONResponse({'data': report}, status_code=201)
-    except CustomCandleImportError as exc:
-        return JSONResponse({'error': str(exc)}, status_code=422)
 
 
 @router.post("/import")

@@ -18,8 +18,6 @@ from jesse.info import backtesting_exchanges, exchange_info, live_trading_exchan
 from jesse.models.Route import Route
 from jesse.modes.import_candles_mode.drivers import (
     build_historical_provider_registry,
-    driver_names,
-    drivers,
     historical_provider_classes,
 )
 from jesse.services import validators
@@ -101,8 +99,10 @@ def test_is_daily_bars_only_true_for_india_exchanges(exchange):
     assert validators.is_daily_bars_only(exchange) is True
 
 
-def test_is_daily_bars_only_false_for_a_crypto_exchange():
-    assert validators.is_daily_bars_only(exchanges.BINANCE_SPOT) is False
+def test_is_daily_bars_only_false_for_sandbox():
+    # Sandbox has no `jesse.info.exchange_info` entry at all (it exists only to drive the
+    # engine test suite - see AGENTS.md), so it takes the `daily_bars_only` default of False.
+    assert validators.is_daily_bars_only(exchanges.SANDBOX) is False
 
 
 class _FakeRouter:
@@ -144,16 +144,6 @@ def test_validate_routes_accepts_1w_on_nse_route():
 def test_historical_provider_classes_map_nse_bse_to_india_providers():
     assert historical_provider_classes['NSE'] is NseProvider
     assert historical_provider_classes['BSE'] is BseProvider
-
-
-def test_nse_bse_are_not_live_exchange_drivers():
-    # `drivers`/`driver_names` back live-trading exchange selection - NSE/BSE are
-    # backtest-only (story #9), so they must never appear there, only in the broader
-    # `historical_provider_classes` used for import-candles.
-    assert 'NSE' not in drivers
-    assert 'BSE' not in drivers
-    assert 'NSE' not in driver_names
-    assert 'BSE' not in driver_names
 
 
 def test_build_historical_provider_registry_constructs_nse_provider_with_no_network_or_files(

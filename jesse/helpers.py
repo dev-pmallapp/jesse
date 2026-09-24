@@ -1117,7 +1117,7 @@ def cpu_cores_count():
     return cpu_count()
 
 
-# a function that converts name to env_name. Example: 'Testnet Binance Futures' into 'TESTNET_BINANCE_FUTURES'
+# a function that converts name to env_name. Example: 'Testnet Exchange Name' into 'TESTNET_EXCHANGE_NAME'
 def convert_to_env_name(name: str) -> str:
     return name.replace(' ', '_').upper()
 

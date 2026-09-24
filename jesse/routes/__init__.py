@@ -117,7 +117,7 @@ class RouterClass:
     def formatted_routes(self) -> list:
         """
         Example:
-        [{'exchange': 'Binance', 'strategy': 'A1', 'symbol': 'BTC-USDT', 'timeframe': '1m'}]
+        [{'exchange': 'NSE', 'strategy': 'A1', 'symbol': 'RELIANCE-INR', 'timeframe': '1D'}]
         """
         return [
             {
@@ -133,7 +133,7 @@ class RouterClass:
     def formatted_data_routes(self) -> list:
         """
         Example:
-        [{'exchange': 'Binance', 'symbol': 'BTC-USD', 'timeframe': '3m'}]
+        [{'exchange': 'NSE', 'symbol': 'RELIANCE-INR', 'timeframe': '1D'}]
         """
         return [{
             'exchange': r.exchange,

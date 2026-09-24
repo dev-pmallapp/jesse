@@ -1,9 +1,9 @@
 """No-argument NSE/BSE `IndiaExchangeProvider` subclasses for Jesse's exchange
 registry (story #9).
 
-`build_historical_provider_registry`/`build_crypto_historical_provider_registry`
-(jesse/modes/import_candles_mode/drivers/__init__.py) construct every registered
-provider with `provider_class()` - no arguments - but `IndiaExchangeProvider` itself
+`build_historical_provider_registry` (jesse/modes/import_candles_mode/drivers/__init__.py)
+constructs every registered provider with `provider_class()` - no arguments - but
+`IndiaExchangeProvider` itself
 requires an `exchange` name. These thin subclasses exist purely to supply that, one per
 exchange, so they can be registered directly in `historical_provider_classes`.
 

@@ -669,8 +669,9 @@ def add_candle_from_trade(trade, exchange: str, symbol: str) -> np.ndarray | Non
     _update_position_current_price(exchange, symbol, trade['price'])
 
     def do(t) -> np.ndarray:
-        # in some cases we might be missing the current forming candle like it is on FTX, hence
-        # if that is the case, generate the current forming candle (it won't be super accurate)
+        # in some cases (depends on the live-trading exchange's feed) we might be missing the
+        # current forming candle, hence if that is the case, generate the current forming
+        # candle (it won't be super accurate)
         current_candle = get_current_candle(exchange, symbol, t)
         if jh.next_candle_timestamp(current_candle, t) < jh.now():
             new_candle = _generate_empty_candle_from_previous_candle(current_candle, t)

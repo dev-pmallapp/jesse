@@ -41,7 +41,7 @@ def add_order_record_only(order: Order) -> None:
     """
     t = store.closed_trades._get_current_trade(order.exchange, order.symbol)
 
-    # Some exchanges (e.g. Binance) report filled_qty as a *cumulative* running total
+    # Some live-trading exchanges report filled_qty as a *cumulative* running total
     # across partial fills. If we appended that value on every call we'd inflate qty
     # and therefore PNL. Instead, we track how much has already been recorded for this
     # order and only append the incremental amount.

@@ -9,13 +9,9 @@ from .config import (
     update_config_service
 )
 from .credentials import (
-    delete_data_provider_credentials_service,
     delete_exchange_api_key_service,
-    get_data_provider_credentials_service,
     get_exchange_api_keys_service,
-    store_data_provider_credentials_service,
     store_exchange_api_key_service,
-    validate_data_provider_credentials_service,
 )
 from .indicator import *
 from .strategy import *
