@@ -23,7 +23,7 @@ Out of scope: F&O / options, intraday product rules (MIS square-off), broker ord
 | D3 | Bar resolution | **Daily-first.** One 1m row per session stamped at the session close carries the day's OHLCV; the existing sparse-market engine aggregates it to correct 1D/1W candles. Routes on these markets must be `>= 1D` (validated) |
 | D4 | Mutual funds source | **AMFI NAV history** (official, free); NAV stored as a flat candle (O=H=L=C, volume 0) |
 | D5 | Fundamentals | Point-in-time store keyed by **filing date**. Default automated source: **NSE/BSE XBRL filings** (free). Paid vendors plug in behind a `FundamentalsProvider` interface |
-| D6 | Universes | **NSE index families only.** Verified Alpha indices: Nifty Alpha 50, NIFTY100 Alpha 30, Nifty200 Alpha 30 ("NIFTY500 Alpha 30" does not exist). No custom lists |
+| D6 | Universes | **NSE index families only.** Verified Alpha indices: Nifty Alpha 50, NIFTY100 Alpha 30, Nifty200 Alpha 30 ("NIFTY500 Alpha 30" does not exist). No custom lists. Point-in-time membership: no free historical source exists (spike #41 checked Wayback Machine's constituent-CSV archive — too sparse, 1-3 snapshots/file vs. quarterly rebalances); Jesse captures its own dated snapshot on each quarterly rebalance going forward and flags "used current members" for any earlier backtest date |
 | D8 | Paper trading | **End-of-day first**: replay the locked strategy from the portfolio start date after each session is published, and append new fills to a local INR ledger. Intraday paper trading on a broker market-data feed follows. No broker orders ever |
 | D7 | Price adjustment | Sources are interchangeable only if stored prices mean the same thing. Canonical form: **split/bonus-adjusted by Jesse** from NSE corporate-action data. Confirmed necessary: bhavcopy prices are never adjusted afterwards (spike #2). Sources that return pre-adjusted prices declare it and skip that step. Each dataset records its source |
 
@@ -50,7 +50,7 @@ data. Swing strategies fill against daily high/low anyway. Native non-1m sources
 0. ~~Probe the free sources~~ — done in #2; findings in `docs/india-markets/spike-sources.md`,
    fixtures in `tests/fixtures/india/`. Consequences for the steps below:
    - NSE bhavcopy: UDiFF format first (one schema, has ISIN), legacy format as fallback for older
-     dates (legacy works 1994 → 07-Jul-2024). How far back UDiFF was backfilled is still unknown.
+     dates (legacy works 1994 → 07-Jul-2024). UDiFF was backfilled to exactly 01-Jan-2024 (spike #41; 29-Dec-2023 is 404), so the legacy fallback is required before that.
    - BSE and niftyindices.com return "not found" as HTTP 200 with an HTML page: fetchers must
      check content type and body, never trust the status code alone.
    - BSE legacy files have no symbol column (numeric scrip code only); NSE and BSE series codes
@@ -82,11 +82,23 @@ account, and backtest on 1D.
 ### Phase 2 — Screener and costs
 
 1. Universes from NSE index families (Nifty Alpha 50, NIFTY100 Alpha 30, Nifty200 Alpha 30, and
-   other families as needed). Constituent file names for Alpha 50 and NIFTY100 Alpha 30 are not yet
-   found (see the follow-up spike). The current constituent CSV gives today's
-   members. **Survivorship bias:** for past dates, rebuild membership from NSE's rebalance
-   announcements where available; otherwise the report flags that it used current members.
-   Index levels are also imported, as benchmarks.
+   other families as needed). Constituent file names for all three are known (spike #41):
+   `ind_nifty_Alpha_Index.csv`, `ind_nifty100Alpha30list.csv`, `ind_nifty200alpha30_list.csv`,
+   fetched from `nsearchives.nseindia.com/content/indices/<filename>` (mirrors niftyindices.com
+   byte-for-byte, same reliable no-auth host as bhavcopy, no soft-404 risk there unlike
+   niftyindices.com's own domain). The current constituent CSV gives today's members.
+   **Survivorship bias:** no free historical/point-in-time constituent source exists (spike #41
+   checked NSE rebalance announcements and the Wayback Machine's CDX archive of the constituent
+   CSVs — the latter has only 1-3 dated snapshots per file spanning years, far too sparse against
+   the quarterly rebalance cadence). Approach: capture our own dated snapshot of each universe
+   index's constituent CSV on/after each quarterly rebalance (last working day of Mar/Jun/Sep/Dec)
+   going forward, building real point-in-time history from that point on; for any backtest date
+   before Jesse started capturing, fall back to current members and flag the report
+   (`used_current_members: true`) so survivorship bias is explicit, not silent.
+   Index levels are also imported, as benchmarks, from niftyindices.com's historical-data API
+   (`POST /BackPage/getHistoricaldatatabletoString`, reverse-engineered in spike #41 — deeper
+   history than NSE's `ind_close_all` for the Alpha indices, e.g. Nifty Alpha 50 back to
+   01-Jan-2004), with `ind_close_all` as a fallback/cross-check.
 2. `jesse.research.screen(universe, date_or_range, score_fn, filters)` → ranked table (+ CSV),
    computed with Jesse indicators over stored candles.
 3. Batch backtest of a shortlist (one run per symbol) with an aggregate report.

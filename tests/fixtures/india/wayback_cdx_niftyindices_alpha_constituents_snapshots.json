@@ -1,0 +1,96 @@
+{
+  "note": "Trimmed, combined results from three separate Wayback CDX API queries (one per file, matchType=exact), fetched 2026-09-24. Each list is the FULL snapshot history for that file, not trimmed further -- this IS all Wayback has.",
+  "ind_nifty_Alpha_Index.csv (Nifty Alpha 50)": {
+    "header": [
+      "urlkey",
+      "timestamp",
+      "original",
+      "mimetype",
+      "statuscode",
+      "digest",
+      "length"
+    ],
+    "snapshots": [
+      [
+        "com,niftyindices)/indexconstituent/ind_nifty_alpha_index.csv",
+        "20181019092745",
+        "http://www.niftyindices.com:80/IndexConstituent/ind_nifty_Alpha_Index.csv",
+        "application/octet-stream",
+        "200",
+        "MYSPWC76GKTKNVCFFNPVZNWITOGGDBXN",
+        "1671"
+      ],
+      [
+        "com,niftyindices)/indexconstituent/ind_nifty_alpha_index.csv",
+        "20190201175542",
+        "http://niftyindices.com/IndexConstituent/ind_nifty_Alpha_Index.csv",
+        "application/octet-stream",
+        "200",
+        "T354BBHZMVCYDDGJCQHU6AU4W33AM2KY",
+        "1746"
+      ]
+    ]
+  },
+  "ind_nifty100Alpha30list.csv (NIFTY100 Alpha 30)": {
+    "header": [
+      "urlkey",
+      "timestamp",
+      "original",
+      "mimetype",
+      "statuscode",
+      "digest",
+      "length"
+    ],
+    "snapshots": [
+      [
+        "com,niftyindices)/indexconstituent/ind_nifty100alpha30list.csv",
+        "20220616065520",
+        "https://www.niftyindices.com/IndexConstituent/ind_nifty100Alpha30list.csv",
+        "application/octet-stream",
+        "200",
+        "MHI6UYB6TZ6243VXG4FKPGR5IOE6KA2X",
+        "1349"
+      ],
+      [
+        "com,niftyindices)/indexconstituent/ind_nifty100alpha30list.csv",
+        "20220616065535",
+        "https://www.niftyindices.com/IndexConstituent/ind_nifty100Alpha30list.csv",
+        "application/octet-stream",
+        "200",
+        "MHI6UYB6TZ6243VXG4FKPGR5IOE6KA2X",
+        "1448"
+      ],
+      [
+        "com,niftyindices)/indexconstituent/ind_nifty100alpha30list.csv",
+        "20260914154931",
+        "https://www.niftyindices.com/IndexConstituent/ind_nifty100alpha30list.csv",
+        "application/octet-stream",
+        "200",
+        "YVGP33AGKZQD7GMJMBST7PDANHQ6T3XS",
+        "2194"
+      ]
+    ]
+  },
+  "ind_nifty200alpha30_list.csv (NIFTY200 Alpha 30, known-good reference)": {
+    "header": [
+      "urlkey",
+      "timestamp",
+      "original",
+      "mimetype",
+      "statuscode",
+      "digest",
+      "length"
+    ],
+    "snapshots": [
+      [
+        "com,niftyindices)/indexconstituent/ind_nifty200alpha30_list.csv",
+        "20230814162055",
+        "https://www.niftyindices.com/IndexConstituent/ind_nifty200alpha30_list.csv",
+        "application/octet-stream",
+        "200",
+        "64IYIPMBZQT6PIN5O54TYOMFDP4CO2P6",
+        "1179"
+      ]
+    ]
+  }
+}
