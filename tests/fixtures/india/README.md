@@ -3,7 +3,7 @@
 Real payloads fetched during the source-probe spike for GitHub issue
 `dev-pmallapp/jesse#2` (see `docs/india-markets/spike-sources.md` for full
 findings). Every file below is **trimmed** to a header plus a handful of rows
-(kept < 20 KB) — none of these are complete bhavcopies. Fetched 2026-09-23
+(kept < 20 KB) — none of these are complete bhavcopies. Fetched 2026-09-23 (spike #2) and 2026-09-24 (spike #41; see the per-row dates)
 using ordinary browser-like headers (`curl`, custom `User-Agent`), no
 authentication beyond what's noted per source in the findings doc.
 
