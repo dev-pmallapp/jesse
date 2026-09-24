@@ -1,3 +1,7 @@
+## Symbol Format
+
+A route's `symbol` accepts a bare NSE/BSE ticker (`RELIANCE`), the TradingView-style form (`NSE:RELIANCE`), or the internal `BASE-QUOTE` form (`RELIANCE-INR`) - all three resolve to the same route. Examples below still use the `-INR` form; bare tickers work the same way.
+
 ## Tool Reference
 
 ### create_backtest_draft()

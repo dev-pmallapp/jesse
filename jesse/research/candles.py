@@ -3,6 +3,7 @@ from typing import Union, Tuple
 from jesse import factories
 import jesse.helpers as jh
 from jesse.services.candle_service import get_candles_from_db as _get_candles
+from jesse.services.symbol_input import normalize_symbol
 
 
 def get_candles(
@@ -15,11 +16,14 @@ def get_candles(
         caching: bool = False,
         is_for_jesse: bool = False
 ) -> Tuple[np.ndarray, np.ndarray]:
+    """`symbol` accepts a bare NSE/BSE ticker (`RELIANCE`) or a TradingView-style
+    symbol (`NSE:RELIANCE`) in addition to the internal `RELIANCE-INR` form."""
     if not jh.is_jesse_project():
         raise FileNotFoundError(
             'Invalid directory: ".env" file not found. To use Jesse inside notebooks, create notebooks inside the root of a Jesse project.'
         )
 
+    symbol = normalize_symbol(exchange, symbol)
     return _get_candles(exchange, symbol, timeframe, start_date_timestamp, finish_date_timestamp, warmup_candles_num, caching, is_for_jesse)
 
 
@@ -27,6 +31,9 @@ def store_candles(candles: np.ndarray, exchange: str, symbol: str) -> None:
     """
     Stores candles in the database. The stored data can later be used for being fetched again via get_candles or even for running backtests on them.
     A common use case for this function is for importing candles from a CSV file so you can later use them for backtesting.
+
+    `symbol` accepts a bare NSE/BSE ticker (`RELIANCE`) or a TradingView-style symbol
+    (`NSE:RELIANCE`) in addition to the internal `RELIANCE-INR` form.
     """
     from jesse.modes.import_candles_mode import store_candles_list as store_candles_from_list
     import jesse.helpers as jh
@@ -36,6 +43,8 @@ def store_candles(candles: np.ndarray, exchange: str, symbol: str) -> None:
         raise FileNotFoundError(
             'Invalid directory: ".env" file not found. To use Jesse inside notebooks, create notebooks inside the root of a Jesse project.'
         )
+
+    symbol = normalize_symbol(exchange, symbol)
 
     # validate that candles type must be np.ndarray
     if not isinstance(candles, np.ndarray):

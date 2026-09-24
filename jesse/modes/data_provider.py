@@ -7,6 +7,7 @@ import jesse.helpers as jh
 from jesse.info import live_trading_exchanges, backtesting_exchanges
 from jesse.repositories import candle_repository
 from jesse.services import candle_service
+from jesse.services.symbol_input import normalize_symbol
 from typing import List, Dict
 import csv
 import io
@@ -16,10 +17,12 @@ from fastapi.responses import StreamingResponse
 
 
 def get_candles(exchange: str, symbol: str, timeframe: str):
+    """`symbol` accepts a bare NSE/BSE ticker (`RELIANCE`) or a TradingView-style symbol
+    (`NSE:RELIANCE`) in addition to the internal `RELIANCE-INR` form."""
     from jesse.services.db import database
     database.open_connection()
 
-    symbol = symbol.upper()
+    symbol = normalize_symbol(exchange, symbol)
 
     # fetch the current value for warmup_candles from the database
     from jesse.models.Option import Option

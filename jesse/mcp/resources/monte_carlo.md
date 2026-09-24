@@ -119,7 +119,8 @@ answer that — point them to the candles MC results.
 Stages a draft you can then run.
 
 - `exchange` (default `"NSE"`)
-- `routes` — JSON string array of route objects
+- `routes` — JSON string array of route objects. `symbol` accepts a bare NSE/BSE ticker
+  (`RELIANCE`), `NSE:RELIANCE`, or the internal `RELIANCE-INR` form.
 - `data_routes` — JSON string array (default `"[]"`)
 - `start_date`, `finish_date` — `YYYY-MM-DD`
 - `num_scenarios` — int (default **200**, recommend 200–1000)

@@ -12,7 +12,7 @@ from tqdm import tqdm
 import jesse.helpers as jh
 from jesse import exceptions
 from jesse.config import config as jesse_config, set_config
-from jesse.research.backtest import _reset_research_runtime_state
+from jesse.research.backtest import _normalize_candles_dict, _reset_research_runtime_state
 from jesse.research.monte_carlo.common import DEFAULT_CPU_USAGE_RATIO, MIN_CPU_CORES
 
 from jesse.routes import router
@@ -134,6 +134,18 @@ def optimize(
 
     if not routes:
         raise ValueError('At least one route is required.')
+
+    # Candle dicts are keyed by jh.key(exchange, symbol) and looked up using the
+    # (already-normalized, via Route.__init__/router.initiate) route symbols below -
+    # so a bare-ticker candles dict must be re-keyed here too, same as research.backtest().
+    training_candles = _normalize_candles_dict(training_candles)
+    training_warmup_candles = (
+        _normalize_candles_dict(training_warmup_candles) if training_warmup_candles else training_warmup_candles
+    )
+    testing_candles = _normalize_candles_dict(testing_candles)
+    testing_warmup_candles = (
+        _normalize_candles_dict(testing_warmup_candles) if testing_warmup_candles else testing_warmup_candles
+    )
 
     _reset_research_runtime_state()
     try:

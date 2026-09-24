@@ -149,16 +149,20 @@ def test_copy_endpoint_validates_target_and_reports_the_copy(api_client, monkeyp
     monkeypatch.setattr(candle_repository, 'copy_candles', fake_copy)
 
     base = {'exchange': 'NSE', 'symbol': 'RELIANCE-INR'}
+    # dev-pmallapp/jesse#75: a `target_symbol` not already ending in '-INR' is always
+    # treated as a bare NSE/BSE ticker, so an embedded '-' (like the old free-form
+    # 'reliance-eq' label this test used to send) is now encoded to '_' the same way
+    # `BAJAJ-AUTO` is - see jesse.services.symbol_input.normalize_symbol.
     ok = api_client.post('/candles/copy', json={**base, 'target_exchange': 'BSE', 'target_symbol': 'reliance-eq'}, headers=_headers())
     assert ok.status_code == 200
     assert ok.json() == {
-        'message': 'Copied 42 candles from RELIANCE-INR on NSE to RELIANCE-EQ on BSE',
+        'message': 'Copied 42 candles from RELIANCE-INR on NSE to RELIANCE_EQ-INR on BSE',
         'copied_count': 42,
         'deleted_count': 0,
         'target_exchange': 'BSE',
-        'target_symbol': 'RELIANCE-EQ',
+        'target_symbol': 'RELIANCE_EQ-INR',
     }
-    assert calls[-1] == ('NSE', 'RELIANCE-INR', 'BSE', 'RELIANCE-EQ', False)
+    assert calls[-1] == ('NSE', 'RELIANCE-INR', 'BSE', 'RELIANCE_EQ-INR', False)
 
     moved = api_client.post('/candles/copy', json={**base, 'target_exchange': 'BSE', 'delete_source': True}, headers=_headers())
     assert moved.status_code == 200
@@ -167,7 +171,8 @@ def test_copy_endpoint_validates_target_and_reports_the_copy(api_client, monkeyp
 
     # 'Not An Exchange' fails the backtesting_exchanges membership check (only NSE/BSE remain).
     assert api_client.post('/candles/copy', json={**base, 'target_exchange': 'Not An Exchange'}, headers=_headers()).status_code == 422
-    assert api_client.post('/candles/copy', json={**base, 'target_exchange': 'BSE', 'target_symbol': 'RELIANCEINR'}, headers=_headers()).status_code == 422
+    # A TradingView prefix naming a different exchange than `target_exchange` is ambiguous.
+    assert api_client.post('/candles/copy', json={**base, 'target_exchange': 'BSE', 'target_symbol': 'NSE:RELIANCE'}, headers=_headers()).status_code == 422
     assert api_client.post('/candles/copy', json={**base, 'target_exchange': 'BSE', 'target_symbol': 'TAKEN-INR'}, headers=_headers()).status_code == 409
     assert api_client.post('/candles/copy', json={**base, 'target_exchange': 'BSE'}).status_code == 401
     assert len(calls) == 3

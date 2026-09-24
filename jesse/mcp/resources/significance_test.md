@@ -36,7 +36,8 @@ and `n_observations` to the user.
 Creates a draft session you can then run.
 
 - `exchange` (default `"NSE"`)
-- `routes` — JSON string array with **exactly one** route object
+- `routes` — JSON string array with **exactly one** route object. `symbol` accepts a
+  bare NSE/BSE ticker (`RELIANCE`), `NSE:RELIANCE`, or the internal `RELIANCE-INR` form.
 - `data_routes` — JSON string array (default `"[]"`)
 - `start_date`, `finish_date` — `YYYY-MM-DD`
 - `n_simulations` — int (default `2000`; recommend `2000+`)
