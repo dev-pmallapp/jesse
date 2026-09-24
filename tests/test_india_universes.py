@@ -61,6 +61,21 @@ class FakeIndiaHttpClient:
         return self._files[url]
 
 
+class _FailingIndiaHttpClient:
+    """Simulates a provider outage: `.get()` raises `ProviderUnavailableError`, the
+    same as the real `IndiaHttpClient` does on a connection failure or a persistent
+    5xx (see http.py) - as opposed to `FakeIndiaHttpClient`'s `None` payload, which
+    stands in for a soft-404 (holiday/never-existed file).
+    """
+
+    def __init__(self):
+        self.calls: list[str] = []
+
+    def get(self, url: str, *, expect: str, referer: str | None = None) -> bytes | None:
+        self.calls.append(url)
+        raise ProviderUnavailableError(f'{url} is currently unavailable')
+
+
 def _url_for(universe_name: str) -> str:
     spec = _UNIVERSE_REGISTRY[universe_name]
     return f'https://nsearchives.nseindia.com/content/indices/{spec.constituents_file}'
@@ -188,6 +203,55 @@ def test_refresh_true_refetches_and_overwrites_todays_snapshot(monkeypatch, tmp_
 
 
 # --------------------------------------------------------------------------------------
+# today/refresh fetch failure: fall back to an existing current-period snapshot
+# --------------------------------------------------------------------------------------
+
+def test_today_fetch_failure_falls_back_to_existing_current_period_snapshot(monkeypatch, tmp_path):
+    # NIFTY ALPHA 50 is quarterly; 2026-09-20 sits in the same Jun30-Sep30 period as
+    # today (2026-09-24). A provider outage on the today fetch shouldn't hard-fail when
+    # that same-period snapshot is already on disk - it's still exact point-in-time data.
+    _write_snapshot(tmp_path, 'nifty-alpha-50', date(2026, 9, 20))
+    today = date(2026, 9, 24)
+    _freeze_today(monkeypatch, today)
+    client = _FailingIndiaHttpClient()
+
+    result = universe('NIFTY ALPHA 50', snapshot_dir=tmp_path, http_client=client)
+
+    assert result.snapshot_date == date(2026, 9, 20)
+    assert result.used_current_members is False
+    assert client.calls == [_url_for('NIFTY ALPHA 50')]
+
+
+def test_today_fetch_failure_raises_when_no_current_period_snapshot_exists(monkeypatch, tmp_path):
+    # Only a snapshot from an earlier period (well before the Jun30-Sep30 period today
+    # sits in) exists - nothing usable for the current period, so the failure must
+    # still propagate rather than silently falling back to stale, wrong-period data.
+    _write_snapshot(tmp_path, 'nifty-alpha-50', date(2025, 10, 1))
+    today = date(2026, 9, 24)
+    _freeze_today(monkeypatch, today)
+    client = _FailingIndiaHttpClient()
+
+    with pytest.raises(ProviderUnavailableError):
+        universe('NIFTY ALPHA 50', snapshot_dir=tmp_path, http_client=client)
+
+
+def test_refresh_true_falls_back_to_existing_snapshot_when_fetch_fails(monkeypatch, tmp_path):
+    # refresh=True bypasses the "already have today's file" early return and always
+    # re-fetches - the same current-period fallback must still apply if that re-fetch
+    # fails, rather than losing the snapshot that was already on disk.
+    today = date(2026, 9, 24)
+    _write_snapshot(tmp_path, 'nifty-alpha-50', today)
+    _freeze_today(monkeypatch, today)
+    client = _FailingIndiaHttpClient()
+
+    result = universe('NIFTY ALPHA 50', refresh=True, snapshot_dir=tmp_path, http_client=client)
+
+    assert result.snapshot_date == today
+    assert result.used_current_members is False
+    assert client.calls == [_url_for('NIFTY ALPHA 50')]
+
+
+# --------------------------------------------------------------------------------------
 # point-in-time resolution
 # --------------------------------------------------------------------------------------
 
@@ -205,6 +269,20 @@ def test_as_of_in_same_rebalance_period_uses_that_snapshot_without_current_membe
     monkeypatch.setattr(universes_module, '_today', lambda: date(2026, 9, 24))
 
     result = universe('NIFTY ALPHA 50', date(2024, 5, 1), snapshot_dir=tmp_path, http_client=FakeIndiaHttpClient({}))
+
+    assert result.snapshot_date == date(2024, 4, 15)
+    assert result.used_current_members is False
+
+
+def test_as_of_before_a_same_period_snapshot_is_still_exact_not_survivorship(monkeypatch, tmp_path):
+    # Bug fix: only a 2024-04-15 snapshot exists (Mar28-Jun28 quarter) and as_of
+    # (2024-04-01) sits earlier in that SAME period. Membership is constant within a
+    # period, so this is real point-in-time data - used_current_members must be False,
+    # not the True/survivorship flag a later-PERIOD fallback gets.
+    _write_snapshot(tmp_path, 'nifty-alpha-50', date(2024, 4, 15))
+    monkeypatch.setattr(universes_module, '_today', lambda: date(2026, 9, 24))
+
+    result = universe('NIFTY ALPHA 50', date(2024, 4, 1), snapshot_dir=tmp_path, http_client=FakeIndiaHttpClient({}))
 
     assert result.snapshot_date == date(2024, 4, 15)
     assert result.used_current_members is False

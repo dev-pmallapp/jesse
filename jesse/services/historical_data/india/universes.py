@@ -153,18 +153,26 @@ def universe(
 ) -> Universe:
     """Resolve `name`'s point-in-time membership as of `as_of` (default: today, IST).
 
-    - `as_of=None`: today. Ensures today has a snapshot (fetching one if missing, or
-      if `refresh=True`), then resolves exactly like any other `as_of` in today's own
-      rebalance period - which that fresh snapshot always is, so this always yields
-      `used_current_members=False`.
-    - A past `as_of` with a stored snapshot dated <= as_of in the SAME rebalance
-      period: uses the latest such snapshot, `used_current_members=False` (real
-      point-in-time membership).
-    - Otherwise (no snapshot captured yet for that period): uses the nearest stored
-      snapshot dated AFTER `as_of` if one exists, else fetches/stores today's,
-      `used_current_members=True` in both cases (see module docstring).
-    - A future `as_of` raises `ValueError` - there is no way to know tomorrow's
-      constituents.
+    Membership is constant within a rebalance period `[period_start, period_end)`, so
+    any snapshot dated inside `as_of`'s own period is real point-in-time data -
+    regardless of whether it was captured before or after `as_of` itself. Resolution
+    order:
+
+    1. The latest stored snapshot in `as_of`'s period dated <= `as_of`: real
+       point-in-time membership, `used_current_members=False`.
+    2. Else the earliest stored snapshot in `as_of`'s period dated > `as_of` (captured
+       later in the same period, but membership hasn't changed since): still real
+       point-in-time membership, `used_current_members=False`.
+    3. Else the nearest snapshot from a later period - fetching/storing today's if none
+       is already on disk - `used_current_members=True` and a survivorship-bias debug
+       log (see module docstring).
+
+    `as_of=None` means today: this ensures today has a snapshot (fetching one if
+    missing, or if `refresh=True`) before the lookup above runs, so an as_of=None/today
+    call always resolves through step 1, never 2 or 3.
+
+    A future `as_of` raises `ValueError` - there is no way to know tomorrow's
+    constituents.
     """
     canonical_name, spec = _resolve_spec(name)
     today = _today()
@@ -185,14 +193,27 @@ def universe(
     period_start = _period_start(resolved_as_of, spec.rebalance_months)
     period_end = _next_boundary(period_start, spec.rebalance_months)
     stored_dates = _list_snapshot_dates(universe_dir)
+    in_period_dates = [d for d in stored_dates if period_start <= d < period_end]
 
-    in_period_dates = [d for d in stored_dates if period_start <= d < period_end and d <= resolved_as_of]
-    if in_period_dates:
-        snapshot_date = max(in_period_dates)
+    # Step 1: latest in-period snapshot dated <= as_of - the ordinary point-in-time case.
+    before_dates = [d for d in in_period_dates if d <= resolved_as_of]
+    if before_dates:
+        snapshot_date = max(before_dates)
         members = _read_snapshot(universe_dir, snapshot_date, canonical_name)
         return _build_universe(canonical_name, resolved_as_of, snapshot_date, False, members, spec)
 
-    later_dates = sorted(d for d in stored_dates if d > resolved_as_of)
+    # Step 2: no snapshot yet at/before as_of, but one from later in the SAME period
+    # exists - membership hasn't changed since as_of (periods are constant), so this is
+    # still exact, not a survivorship-bias fallback.
+    after_dates = [d for d in in_period_dates if d > resolved_as_of]
+    if after_dates:
+        snapshot_date = min(after_dates)
+        members = _read_snapshot(universe_dir, snapshot_date, canonical_name)
+        return _build_universe(canonical_name, resolved_as_of, snapshot_date, False, members, spec)
+
+    # Step 3: nothing captured for as_of's own period at all - fall back to the nearest
+    # snapshot from a later period (fetching/storing today's if none exists yet).
+    later_dates = sorted(d for d in stored_dates if d >= period_end)
     if later_dates:
         snapshot_date = later_dates[0]
         members = _read_snapshot(universe_dir, snapshot_date, canonical_name)
@@ -258,6 +279,10 @@ def _slug(canonical_name: str) -> str:
 # --------------------------------------------------------------------------------------
 
 def _last_trading_day_of_month(year: int, month: int) -> date:
+    # `is_trading_day` only has holiday data for `markets.india.COVERED_YEARS`
+    # (2011-2026); a boundary computed for a year outside that range silently falls
+    # back to plain Mon-Fri (no holiday adjustment) rather than raising - acceptable
+    # here since these are month-end estimates, not the trading-hours schedule itself.
     first_of_next_month = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
     day = first_of_next_month - timedelta(days=1)
     while not is_trading_day(day):
@@ -320,13 +345,35 @@ def _ensure_today_snapshot(
         return today, _read_snapshot(universe_dir, today, canonical_name)
 
     url = _CONSTITUENTS_URL_TEMPLATE.format(filename=spec.constituents_file)
-    payload = client.get(url, expect='csv')
-    if payload is None:
-        raise ProviderUnavailableError(f'{canonical_name} constituents file ({spec.constituents_file}) is currently unavailable')
+    try:
+        payload = client.get(url, expect='csv')
+    except ProviderUnavailableError:
+        # A raised ProviderUnavailableError and a None payload (soft-404/HTML, see
+        # http.py) both mean "not published right now" - both are recoverable below.
+        payload = None
 
-    members = _parse_members(payload, label=f'{canonical_name} constituents ({spec.constituents_file})')
-    _write_snapshot(path, payload)
-    return today, members
+    if payload is not None:
+        members = _parse_members(payload, label=f'{canonical_name} constituents ({spec.constituents_file})')
+        _write_snapshot(path, payload)
+        return today, members
+
+    # Today's fetch failed. Membership is constant within a rebalance period, so a
+    # snapshot already captured earlier in TODAY's own period (not as_of's - this
+    # helper only ever runs on the today/refresh path) is still exact point-in-time
+    # data; prefer it over hard-failing the whole call. Only re-raise when nothing
+    # usable exists for the current period.
+    period_start = _period_start(today, spec.rebalance_months)
+    period_end = _next_boundary(period_start, spec.rebalance_months)
+    in_period_dates = [d for d in _list_snapshot_dates(universe_dir) if period_start <= d < period_end and d <= today]
+    if in_period_dates:
+        fallback_date = max(in_period_dates)
+        jh.debug(
+            f"{canonical_name} universe: today's constituents fetch failed, falling back to the "
+            f'{fallback_date} snapshot from the current rebalance period'
+        )
+        return fallback_date, _read_snapshot(universe_dir, fallback_date, canonical_name)
+
+    raise ProviderUnavailableError(f'{canonical_name} constituents file ({spec.constituents_file}) is currently unavailable')
 
 
 def _read_snapshot(universe_dir: Path, snapshot_date: date, canonical_name: str) -> tuple[Member, ...]:
