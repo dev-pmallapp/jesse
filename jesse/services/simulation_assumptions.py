@@ -61,8 +61,9 @@ def default_annualization_for_exchange(exchange_name: Any) -> int:
     """
     Registered 252-trading-day markets (NSE, BSE, Massive Stocks, ...) must annualize
     Sharpe/Sortino/CAGR over their trading-day count rather than the crypto-oriented
-    365-day calendar default. Crypto exchanges and unknown/test-only names (e.g. the
-    'Warmup Exchange' fixture) fall back to 365 via exchange_info's own setdefault.
+    365-day calendar default. Registered crypto exchanges get 365 from exchange_info's
+    setdefault; unregistered names (e.g. the 'Warmup Exchange' test fixture) get the
+    365 fallback here.
     """
     return exchange_info.get(exchange_name, {}).get('annualization', 365)
 
