@@ -34,6 +34,9 @@ from __future__ import annotations
 # The endpoint returns nothing for years before 2011. A few entries fall on a weekend
 # (harmless - they're already outside `hours`); descriptions ending in '*' are Diwali
 # Laxmi Pujan days that also carry an evening Muhurat session (see `SPECIAL_SESSIONS`).
+# Entries named "Special Live Trading"/"Dhanteras Trading" (2012) are weekend sessions that
+# did trade (NSE published a bhavcopy), but their windows are unverified, so they stay
+# closed like pre-2023 Muhurat sessions. One entry is added by hand: see 2024-11-01.
 NSE_HOLIDAYS: dict[int, tuple[tuple[str, str], ...]] = {
     2011: (
         ('2011-01-26', 'Republic Day'),
@@ -322,6 +325,9 @@ NSE_HOLIDAYS: dict[int, tuple[tuple[str, str], ...]] = {
         ('2024-09-07', 'Ganesh Chaturthi'),
         ('2024-10-02', 'Mahatma Gandhi Jayanti'),
         ('2024-10-12', 'Dussehra'),
+        # Not in the API's 2024 list, though NSE closed the normal market for Diwali
+        # Laxmi Pujan that Friday and held only the evening Muhurat session.
+        ('2024-11-01', 'Diwali Laxmi Pujan*'),
         ('2024-11-02', 'Balipratipada'),
         ('2024-11-15', 'Prakash Gurpurb Sri Guru Nanak Dev'),
         ('2024-11-20', 'Assembly Elections in Maharashtra'),

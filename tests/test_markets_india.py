@@ -17,6 +17,7 @@ from jesse import utils
 from jesse.markets.india import (
     COVERED_YEARS,
     NSE_HOLIDAYS,
+    REGULAR_SESSION,
     SPECIAL_SESSIONS,
     bse_trading_hours,
     nse_trading_hours,
@@ -230,3 +231,13 @@ def test_import_markets_india_does_not_load_historical_data_india():
     )
 
     assert result.returncode == 0, f'stdout={result.stdout!r} stderr={result.stderr!r}'
+
+
+def test_every_muhurat_override_date_is_also_a_listed_holiday():
+    # Keeps a closed backstop under each Muhurat override: dropping the override must leave
+    # the day closed, not fall back to a full regular session (NSE's API omitted 2024-11-01).
+    for date_text, windows in SPECIAL_SESSIONS.items():
+        if windows == (REGULAR_SESSION,) or len(windows) > 1:
+            continue  # Budget and DR Saturdays are weekends, not listed holidays
+        year = int(date_text[:4])
+        assert date_text in {day for day, _ in NSE_HOLIDAYS[year]}
