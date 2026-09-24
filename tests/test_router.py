@@ -108,23 +108,23 @@ def test_empty_routes_reach_the_public_route_validator() -> None:
 def test_trading_data_overlap_and_multiple_exchanges_are_preserved() -> None:
     trading_routes = [
         _route('BTC-USDT', timeframes.MINUTE_5),
-        _route('ETH-USDT', timeframes.MINUTE_15, exchange=exchanges.BINANCE_SPOT),
+        _route('ETH-USDT', timeframes.MINUTE_15, exchange=exchanges.NSE),
     ]
     data_routes = [
         _data_route('BTC-USDT', timeframes.HOUR_1),
-        _data_route('SOL-USDT', timeframes.HOUR_3, exchange=exchanges.BINANCE_SPOT),
+        _data_route('SOL-USDT', timeframes.HOUR_3, exchange=exchanges.NSE),
     ]
 
     router.initiate(trading_routes, data_routes)
 
     assert set(config['app']['considering_candles']) == {
         (exchanges.SANDBOX, 'BTC-USDT'),
-        (exchanges.BINANCE_SPOT, 'ETH-USDT'),
-        (exchanges.BINANCE_SPOT, 'SOL-USDT'),
+        (exchanges.NSE, 'ETH-USDT'),
+        (exchanges.NSE, 'SOL-USDT'),
     }
     assert set(config['app']['considering_exchanges']) == {
         exchanges.SANDBOX,
-        exchanges.BINANCE_SPOT,
+        exchanges.NSE,
     }
     assert set(config['app']['considering_timeframes']) == {
         timeframes.MINUTE_1,
@@ -137,11 +137,11 @@ def test_trading_data_overlap_and_multiple_exchanges_are_preserved() -> None:
 
 def test_formatted_routes_preserve_input_order_and_shape() -> None:
     trading_routes = [
-        _route('ETH-USDT', timeframes.MINUTE_15, exchange=exchanges.BINANCE_SPOT),
+        _route('ETH-USDT', timeframes.MINUTE_15, exchange=exchanges.NSE),
         _route('BTC-USDT', timeframes.MINUTE_5),
     ]
     data_routes = [
-        _data_route('SOL-USDT', timeframes.HOUR_1, exchange=exchanges.BINANCE_SPOT),
+        _data_route('SOL-USDT', timeframes.HOUR_1, exchange=exchanges.NSE),
     ]
 
     router.initiate(trading_routes, data_routes)
@@ -158,9 +158,9 @@ def test_reinitializing_routes_replaces_previous_session_state() -> None:
     router.initiate(
         [
             _route('BTC-USDT', timeframes.MINUTE_5),
-            _route('ETH-USDT', timeframes.MINUTE_15, exchange=exchanges.BINANCE_SPOT),
+            _route('ETH-USDT', timeframes.MINUTE_15, exchange=exchanges.NSE),
         ],
-        [_data_route('SOL-USDT', timeframes.HOUR_1, exchange=exchanges.BINANCE_SPOT)],
+        [_data_route('SOL-USDT', timeframes.HOUR_1, exchange=exchanges.NSE)],
     )
 
     next_routes = [_route('XRP-USDT', timeframes.HOUR_3)]

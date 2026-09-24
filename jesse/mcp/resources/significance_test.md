@@ -35,7 +35,7 @@ and `n_observations` to the user.
 
 Creates a draft session you can then run.
 
-- `exchange` (default `"Binance Perpetual Futures"`)
+- `exchange` (default `"NSE"`)
 - `routes` — JSON string array with **exactly one** route object
 - `data_routes` — JSON string array (default `"[]"`)
 - `start_date`, `finish_date` — `YYYY-MM-DD`
@@ -109,12 +109,12 @@ write_strategy("RSIOversoldEntry", code=minimal_signal_only_code)
 
 # 2. Stage the test
 draft = create_significance_test_draft(
-    exchange="Binance Perpetual Futures",
-    routes='[{"exchange":"Binance Perpetual Futures","strategy":"RSIOversoldEntry","symbol":"BTC-USDT","timeframe":"4h"}]',
+    exchange="NSE",
+    routes='[{"exchange":"NSE","strategy":"RSIOversoldEntry","symbol":"RELIANCE-INR","timeframe":"1D"}]',
     start_date="2022-01-01",
     finish_date="2024-01-01",
     n_simulations=2000,
-    hypothesis="Buying BTC 4h when RSI(14) < 30 produces above-random forward returns.",
+    hypothesis="Buying RELIANCE when RSI(14) < 30 produces above-random forward returns on daily bars.",
 )
 sid = draft["session_id"]
 

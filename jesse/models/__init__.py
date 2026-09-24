@@ -1,6 +1,5 @@
 from .Candle import Candle
 from .ClosedTrade import ClosedTrade
-from .DataProviderCredentials import DataProviderCredentials
 from .IndiaAdjustmentState import IndiaAdjustmentState
 from .Exchange import Exchange
 from .FuturesExchange import FuturesExchange

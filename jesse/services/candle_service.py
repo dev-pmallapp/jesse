@@ -11,6 +11,7 @@ from jesse.store import store
 from jesse.config import config
 from jesse.repositories import candle_repository
 from jesse.libs.dynamic_numpy_array import DynamicNumpyArray
+from jesse.services.validators import is_daily_bars_only
 from jesse_rust import candle_from_one_minutes as _candle_from_one_minutes_rust
 
 
@@ -43,14 +44,25 @@ def generate_candle_from_one_minutes(
     ])
 
 
-def generate_candle_from_observed_minutes(timeframe: str, candles: np.ndarray) -> np.ndarray:
-    """Aggregate observed 1m rows that belong to one clock-aligned timeframe bucket."""
+def generate_candle_from_observed_minutes(
+        timeframe: str,
+        candles: np.ndarray,
+        monday_weeks: bool = False,
+) -> np.ndarray:
+    """Aggregate observed 1m rows that belong to one clock-aligned timeframe bucket.
+
+    `monday_weeks` (passed True only for daily-bars-only/NSE-BSE-style exchanges, see
+    `is_daily_bars_only`) Monday-aligns a "1W" bucket instead of the epoch-anchored
+    (Thursday) default - see `jh.timeframe_bucket_start`. Every other timeframe, and
+    every crypto caller (default False), keeps the original bucket math unchanged.
+    """
     if len(candles) == 0:
         raise ValueError('No candles were passed')
 
     timeframe_ms = jh.timeframe_to_one_minutes(timeframe) * 60_000
-    bucket_start = int(candles[0, 0]) - (int(candles[0, 0]) % timeframe_ms)
-    if ((candles[:, 0].astype(np.int64) // timeframe_ms) * timeframe_ms != bucket_start).any():
+    bucket_start = int(jh.timeframe_bucket_start(int(candles[0, 0]), timeframe, monday_weeks=monday_weeks))
+    bucket_starts = jh.timeframe_bucket_start(candles[:, 0].astype(np.int64), timeframe, monday_weeks=monday_weeks)
+    if (bucket_starts != bucket_start).any():
         raise ValueError(f'Observed candles span more than one "{timeframe}" clock bucket.')
 
     generated = generate_candle_from_one_minutes(timeframe, candles, accept_forming_candles=True)
@@ -62,18 +74,22 @@ def generate_completed_candles_from_observed_minutes(
         timeframe: str,
         candles: np.ndarray,
         available_at: int,
+        monday_weeks: bool = False,
 ) -> np.ndarray:
-    """Aggregate nonempty clock buckets whose closing boundary is observable by ``available_at``."""
+    """Aggregate nonempty clock buckets whose closing boundary is observable by ``available_at``.
+
+    See `generate_candle_from_observed_minutes` for `monday_weeks`.
+    """
     if len(candles) == 0:
         return np.zeros((0, 6))
 
     timeframe_ms = jh.timeframe_to_one_minutes(timeframe) * 60_000
-    bucket_starts = (candles[:, 0].astype(np.int64) // timeframe_ms) * timeframe_ms
+    bucket_starts = jh.timeframe_bucket_start(candles[:, 0].astype(np.int64), timeframe, monday_weeks=monday_weeks)
     boundaries = np.flatnonzero(np.diff(bucket_starts)) + 1
     starts = np.concatenate(([0], boundaries))
     stops = np.concatenate((boundaries, [len(candles)]))
     generated = [
-        generate_candle_from_observed_minutes(timeframe, candles[start:stop])
+        generate_candle_from_observed_minutes(timeframe, candles[start:stop], monday_weeks=monday_weeks)
         for start, stop in zip(starts, stops)
         if bucket_starts[start] + timeframe_ms <= available_at
     ]
@@ -237,6 +253,7 @@ def inject_warmup_candles_to_store(
     # trading period; doing so would expose its final OHLCV before simulation.
     batch_add_candle(observable_candles, exchange, symbol, '1m', with_generation=False)
 
+    monday_weeks = is_daily_bars_only(exchange)
     for timeframe in config['app']['considering_timeframes']:
         if timeframe == '1m':
             continue
@@ -244,6 +261,7 @@ def inject_warmup_candles_to_store(
             timeframe,
             observable_candles,
             available_at,
+            monday_weeks=monday_weeks,
         )
         batch_add_candle(
             generated_candles,
@@ -309,10 +327,10 @@ def get_candles_from_db(
 
     # if the timeframe is not 1m, generate the candles for the requested timeframe
     if warmup_candles_num > 0:
-        warmup_candles = _get_generated_candles(timeframe, warmup_candles)
+        warmup_candles = _get_generated_candles(timeframe, warmup_candles, exchange)
     else:
         warmup_candles = None
-    trading_candles = _get_generated_candles(timeframe, trading_candles)
+    trading_candles = _get_generated_candles(timeframe, trading_candles, exchange)
 
     return warmup_candles, trading_candles
 
@@ -394,6 +412,7 @@ def _get_observed_warmup_candles_from_db(
 
     timeframe_minutes = jh.timeframe_to_one_minutes(timeframe)
     timeframe_ms = timeframe_minutes * 60_000
+    monday_weeks = is_daily_bars_only(exchange)
     required_bucket_starts: set[int] = set()
     cursor = trading_start_timestamp
     # Cap each requested bucket at one source-hour per page; the 1,000-row floor
@@ -415,7 +434,7 @@ def _get_observed_warmup_candles_from_db(
         if not timestamps:
             break
         for (timestamp,) in timestamps:
-            bucket_start = int(timestamp) - (int(timestamp) % timeframe_ms)
+            bucket_start = int(jh.timeframe_bucket_start(int(timestamp), timeframe, monday_weeks=monday_weeks))
             if bucket_start + timeframe_ms <= trading_start_timestamp:
                 required_bucket_starts.add(bucket_start)
         cursor = int(timestamps[-1][0])
@@ -463,13 +482,14 @@ def validate_observed_one_minute_candles(candles: np.ndarray, exchange: str, sym
         raise ValueError(f'Candles for {symbol} on {exchange} must have strictly increasing unique timestamps.')
 
 
-def _get_generated_candles(timeframe, trading_candles) -> np.ndarray:
+def _get_generated_candles(timeframe, trading_candles, exchange: str) -> np.ndarray:
     if len(trading_candles) == 0:
         return np.zeros((0, 6))
     return generate_completed_candles_from_observed_minutes(
         timeframe,
         trading_candles,
         int(trading_candles[-1, 0]) + 60_000,
+        monday_weeks=is_daily_bars_only(exchange),
     )
 
 
@@ -649,8 +669,9 @@ def add_candle_from_trade(trade, exchange: str, symbol: str) -> np.ndarray | Non
     _update_position_current_price(exchange, symbol, trade['price'])
 
     def do(t) -> np.ndarray:
-        # in some cases we might be missing the current forming candle like it is on FTX, hence
-        # if that is the case, generate the current forming candle (it won't be super accurate)
+        # in some cases (depends on the live-trading exchange's feed) we might be missing the
+        # current forming candle, hence if that is the case, generate the current forming
+        # candle (it won't be super accurate)
         current_candle = get_current_candle(exchange, symbol, t)
         if jh.next_candle_timestamp(current_candle, t) < jh.now():
             new_candle = _generate_empty_candle_from_previous_candle(current_candle, t)
@@ -725,8 +746,11 @@ def _generate_bigger_timeframes(candle: np.ndarray, exchange: str, symbol: str, 
         # Without this, when a live session starts mid-period (e.g. at 10:36 on an hourly
         # timeframe), the 1m store only has that one candle, so generate_candle_from_one_minutes
         # stamps the resulting 1h candle as 10:36 instead of the correct period start 10:00.
-        timeframe_ms = jh.timeframe_to_one_minutes(timeframe) * 60_000
-        generated_candle[0] = candle[0] - (candle[0] % timeframe_ms)
+        # (No daily-bars-only exchange supports live trading today - see `info.py` - but this
+        # keeps the boundary correct if/when one does.)
+        generated_candle[0] = jh.timeframe_bucket_start(
+            candle[0], timeframe, monday_weeks=is_daily_bars_only(exchange)
+        )
 
         add_candle(
             generated_candle, exchange, symbol, timeframe, with_execution, with_generation=False
@@ -813,9 +837,10 @@ def _get_timestamp_bucket_candles(exchange: str, symbol: str, timeframe: str) ->
     if long_arr is None:
         raise RouteNotFound(symbol, timeframe)
 
-    timeframe_ms = jh.timeframe_to_one_minutes(timeframe) * 60_000
-    current_bucket_start = int(short_array[short_index, 0])
-    current_bucket_start -= current_bucket_start % timeframe_ms
+    monday_weeks = is_daily_bars_only(exchange)
+    current_bucket_start = int(
+        jh.timeframe_bucket_start(int(short_array[short_index, 0]), timeframe, monday_weeks=monday_weeks)
+    )
 
     visible_short = short_array[:short_index + 1]
     bucket_start_index = int(np.searchsorted(visible_short[:, 0], current_bucket_start, side='left'))
@@ -824,6 +849,7 @@ def _get_timestamp_bucket_candles(exchange: str, symbol: str, timeframe: str) ->
     forming_candle = generate_candle_from_observed_minutes(
         timeframe,
         visible_short[bucket_start_index:],
+        monday_weeks=monday_weeks,
     )
     add_candle(
         forming_candle,

@@ -6,8 +6,6 @@ This module provides MCP tools for managing Jesse candle data,
 using the candle controller endpoints like the dashboard does.
 
 The tools include:
-- preview_custom_candle_csv: Preview deterministic cleanup of a local CSV
-- clean_and_import_custom_candle_csv: Clean and import a local CSV as Custom Data
 - import_candles: Import historical candle data for a symbol
 - cancel_candle_import: Cancel an ongoing candle import process
 - clear_candle_cache: Clear the candles database cache
@@ -21,7 +19,7 @@ For real-time import progress monitoring, use get_candle_import_progress from ev
 All tools require authentication via Jesse admin password.
 """
 
-from typing import Literal, Optional
+from typing import Optional
 
 from jesse.mcp.tools.services.candles import (
     import_candles_service,
@@ -31,8 +29,6 @@ from jesse.mcp.tools.services.candles import (
     get_candle_import_status_service,
     get_existing_candles_service,
     delete_candles_service,
-    preview_custom_candle_csv_service,
-    clean_and_import_custom_candle_csv_service,
     search_symbols_service,
     copy_candles_service,
 )
@@ -48,72 +44,6 @@ def register_candles_tools(mcp):
     Returns:
         None
     """
-
-    @mcp.tool()
-    def preview_custom_candle_csv(
-        file_path: str,
-        symbol: str,
-        timestamp_format: str = 'auto',
-        timestamp_column: str = 'timestamp',
-        open_column: str = 'open',
-        close_column: str = 'close',
-        high_column: str = 'high',
-        low_column: str = 'low',
-        volume_column: str = 'volume',
-    ) -> dict:
-        """Preview how Jesse MCP would clean a local one-minute candle CSV.
-
-        The path must be absolute. The preview canonicalizes mapped headers, converts timestamps
-        to Unix milliseconds, sorts rows, removes identical duplicate timestamps, and reports
-        invalid or conflicting rows without importing anything. Missing minutes remain gaps.
-
-        After reviewing `cleaning_report`, call clean_and_import_custom_candle_csv and explicitly
-        choose `invalid_row_policy="reject"` or `"drop"`.
-        """
-        return preview_custom_candle_csv_service(
-            file_path=file_path,
-            symbol=symbol,
-            timestamp_format=timestamp_format,
-            timestamp_column=timestamp_column,
-            open_column=open_column,
-            close_column=close_column,
-            high_column=high_column,
-            low_column=low_column,
-            volume_column=volume_column,
-        )
-
-    @mcp.tool()
-    def clean_and_import_custom_candle_csv(
-        file_path: str,
-        symbol: str,
-        invalid_row_policy: Literal['reject', 'drop'],
-        timestamp_format: str = 'auto',
-        timestamp_column: str = 'timestamp',
-        open_column: str = 'open',
-        close_column: str = 'close',
-        high_column: str = 'high',
-        low_column: str = 'low',
-        volume_column: str = 'volume',
-    ) -> dict:
-        """Clean and atomically import a local CSV as `Custom Data / SYMBOL / 1m`.
-
-        Use `reject` to fail when any row is invalid. Use `drop` only after reviewing the preview;
-        malformed rows are omitted and reported. Both policies sort timestamps and remove identical
-        duplicates. Conflicting candles at one timestamp always fail, and gaps are never filled.
-        The source file is never modified.
-        """
-        return clean_and_import_custom_candle_csv_service(
-            file_path=file_path,
-            symbol=symbol,
-            invalid_row_policy=invalid_row_policy,
-            timestamp_format=timestamp_format,
-            timestamp_column=timestamp_column,
-            open_column=open_column,
-            close_column=close_column,
-            high_column=high_column,
-            low_column=low_column,
-            volume_column=volume_column,
-        )
 
     @mcp.tool()
     def import_candles(
@@ -141,10 +71,9 @@ def register_candles_tools(mcp):
 
         Parameters:
             exchange (str): Exchange name. Supported values:
-                - "Binance Spot", "Binance Perpetual Futures"
-                - "Bybit Spot", "Bybit USDT Perpetual", "Bybit USDC Perpetual"
-                - "Coinbase Spot", "Bitfinex Spot", "Gate USDT Perpetual"
-            symbol (str): Trading pair in "BASE-QUOTE" format (e.g., "BTC-USDT")
+                - "NSE"
+                - "BSE"
+            symbol (str): Trading pair in "BASE-QUOTE" format (e.g., "RELIANCE-INR")
             start_date (str): Import start date in YYYY-MM-DD format
             import_id (str, optional): Reuse a previous import ID to retry a failed import.
                 If None, a new unique ID is generated.
@@ -181,7 +110,7 @@ def register_candles_tools(mcp):
 
         Example:
             >>> # Step 1: fire the import
-            >>> result = import_candles("Binance Spot", "BTC-USDT", "2024-01-01")
+            >>> result = import_candles("NSE", "RELIANCE-INR", "2024-01-01")
             >>> assert result["status"] == "started"
             >>> import_id = result["import_id"]
 
@@ -190,13 +119,13 @@ def register_candles_tools(mcp):
             >>> while True:
             ...     existing = get_existing_candles()
             ...     symbols = [c["symbol"] for c in existing.get("candle_sets", [])]
-            ...     if "BTC-USDT" in symbols:
+            ...     if "RELIANCE-INR" in symbols:
             ...         print("Import complete!")
             ...         break
             ...     time.sleep(15)
 
             >>> # Retry a failed import with the same ID
-            >>> result = import_candles("Binance Spot", "BTC-USDT", "2024-01-01",
+            >>> result = import_candles("NSE", "RELIANCE-INR", "2024-01-01",
             ...                         import_id=import_id)
         """
         return import_candles_service(
@@ -299,7 +228,7 @@ def register_candles_tools(mcp):
             }
 
         Example:
-            >>> result = import_candles("Binance Spot", "BTC-USDT", "2024-01-01")
+            >>> result = import_candles("NSE", "RELIANCE-INR", "2024-01-01")
             >>> import_id = result["import_id"]
             >>> import time
             >>> while True:
@@ -366,7 +295,7 @@ def register_candles_tools(mcp):
 
         Example:
             >>> # Clear cache after importing new data
-            >>> import_result = import_candles("Binance Spot", "BTC-USDT", "2024-01-01")
+            >>> import_result = import_candles("NSE", "RELIANCE-INR", "2024-01-01")
             >>> cache_result = clear_candle_cache()
             >>> if cache_result["status"] == "success":
             ...     print("Cache cleared - new data will be visible")
@@ -385,11 +314,10 @@ def register_candles_tools(mcp):
         Parameters:
             exchange (str): Exchange name where data was imported from. Must match
                 the exchange used during import_candles(). Supported exchanges:
-                - "Binance Spot", "Binance Perpetual Futures"
-                - "Bybit Spot", "Bybit USDT Perpetual", "Bybit USDC Perpetual"
-                - "Coinbase Spot", "Bitfinex Spot", "Gate USDT Perpetual"
+                - "NSE"
+                - "BSE"
                 Shape: String matching import exchange name
-            symbol (str): Trading pair symbol (e.g., "BTC-USDT", "ETH-USDT")
+            symbol (str): Trading pair symbol (e.g., "RELIANCE-INR", "TCS-INR")
                 Must match symbol used during import_candles()
                 Shape: String in "BASE-QUOTE" format
             timeframe (str): Candle timeframe for analysis. Supported timeframes:
@@ -407,8 +335,8 @@ def register_candles_tools(mcp):
             {
                 "status": "success",
                 "action": "candles_retrieved",
-                "exchange": "Binance Spot",
-                "symbol": "BTC-USDT",
+                "exchange": "NSE",
+                "symbol": "RELIANCE-INR",
                 "timeframe": "1h",
                 "candle_count": 1000,
                 "candles": [
@@ -422,7 +350,7 @@ def register_candles_tools(mcp):
                     },
                     // ... more candles
                 ],
-                "message": "Retrieved 1000 candles for BTC-USDT on Binance Spot (1h)"
+                "message": "Retrieved 1000 candles for RELIANCE-INR on NSE (1h)"
             }
 
             Error Response:
@@ -475,14 +403,14 @@ def register_candles_tools(mcp):
 
         Example:
             >>> # Get hourly BTC data for analysis
-            >>> candles = get_candles("Binance Spot", "BTC-USDT", "1h")
+            >>> candles = get_candles("NSE", "RELIANCE-INR", "1h")
             >>> if candles["status"] == "success":
             ...     data = candles["candles"]
             ...     closes = [candle["close"] for candle in data]
             ...     print(f"Retrieved {len(closes)} price points")
 
             >>> # Get daily ETH data
-            >>> daily_data = get_candles("Binance Spot", "ETH-USDT", "1D")
+            >>> daily_data = get_candles("NSE", "TCS-INR", "1D")
             >>> if daily_data["status"] == "success":
             ...     print(f"Latest close: ${daily_data['candles'][-1]['close']}")
         """
@@ -510,17 +438,17 @@ def register_candles_tools(mcp):
                 "candle_sets_count": 5,
                 "candle_sets": [
                     {
-                        "exchange": "Binance Spot",
-                        "symbol": "BTC-USDT",
+                        "exchange": "NSE",
+                        "symbol": "RELIANCE-INR",
                         "timeframe": "1h",
                         "count": 17520,           // Number of candles
                         "from_date": "2020-01-01",
                         "to_date": "2024-12-31"
                     },
                     {
-                        "exchange": "Binance Spot",
-                        "symbol": "ETH-USDT",
-                        "timeframe": "4h",
+                        "exchange": "NSE",
+                        "symbol": "TCS-INR",
+                        "timeframe": "1D",
                         "count": 4380,
                         "from_date": "2020-01-01",
                         "to_date": "2024-12-31"
@@ -581,7 +509,7 @@ def register_candles_tools(mcp):
             ...     print(f"Found {len(datasets)} datasets")
             ...
             ...     # Find BTC data
-            ...     btc_datasets = [d for d in datasets if d["symbol"] == "BTC-USDT"]
+            ...     btc_datasets = [d for d in datasets if d["symbol"] == "RELIANCE-INR"]
             ...     for dataset in btc_datasets:
             ...         print(f"BTC-{dataset['timeframe']}: {dataset['count']} candles")
         """
@@ -599,11 +527,10 @@ def register_candles_tools(mcp):
         Parameters:
             exchange (str): Exchange name whose data to delete. Must match
                 the exchange name used during import. Supported exchanges:
-                - "Binance Spot", "Binance Perpetual Futures"
-                - "Bybit Spot", "Bybit USDT Perpetual", "Bybit USDC Perpetual"
-                - "Coinbase Spot", "Bitfinex Spot", "Gate USDT Perpetual"
+                - "NSE"
+                - "BSE"
                 Shape: String matching import exchange name exactly
-            symbol (str): Trading pair symbol to delete (e.g., "BTC-USDT", "ETH-USDT")
+            symbol (str): Trading pair symbol to delete (e.g., "RELIANCE-INR", "TCS-INR")
                 Must match symbol used during import exactly
                 Shape: String in "BASE-QUOTE" format
 
@@ -614,9 +541,9 @@ def register_candles_tools(mcp):
             {
                 "status": "success",
                 "action": "candles_deleted",
-                "exchange": "Binance Spot",
-                "symbol": "BTC-USDT",
-                "message": "Candles for BTC-USDT on Binance Spot deleted successfully"
+                "exchange": "NSE",
+                "symbol": "RELIANCE-INR",
+                "message": "Candles for RELIANCE-INR on NSE deleted successfully"
             }
 
             Error Response:
@@ -663,17 +590,17 @@ def register_candles_tools(mcp):
             - Re-import data with different parameters
 
         Example:
-            >>> # Delete BTC data from Binance Spot
-            >>> result = delete_candles("Binance Spot", "BTC-USDT")
+            >>> # Delete RELIANCE data from NSE
+            >>> result = delete_candles("NSE", "RELIANCE-INR")
             >>> if result["status"] == "success":
-            ...     print("BTC data deleted from all timeframes")
+            ...     print("RELIANCE data deleted from all timeframes")
             ... else:
             ...     print(f"Deletion failed: {result['message']}")
 
             >>> # Check what remains after deletion
             >>> remaining = get_existing_candles()
             >>> btc_data = [d for d in remaining["candle_sets"]
-            ...             if d["exchange"] == "Binance Spot" and d["symbol"] == "BTC-USDT"]
+            ...             if d["exchange"] == "NSE" and d["symbol"] == "RELIANCE-INR"]
             >>> print(f"BTC datasets remaining: {len(btc_data)}")  # Should be 0
         """
         return delete_candles_service(exchange=exchange, symbol=symbol)
@@ -682,17 +609,10 @@ def register_candles_tools(mcp):
     def search_symbols(exchange: str, query: str, limit: int = 20) -> dict:
         """Find importable symbols on one candle source by ticker prefix or instrument name.
 
-        Use this before import_candles() when the user names an instrument rather than an
-        exact Jesse symbol, or when a Massive import fails with a symbol-not-found error.
-        Ticker prefixes rank first, then symbols whose provider name contains the query.
-
-        - Crypto exchanges (e.g. "Binance Perpetual Futures") match tickers only, such as "BTC".
-        - Massive sources ("Massive Stocks", "Massive Currencies", "Massive Indices",
-          "Massive Futures") also match names such as "microsoft" or "crude", and each match
-          carries `name`, `kind` (Common Stock, ETF, Forex, Crypto, Index, Future), `venue`,
-          and for futures `expiry`. Every source has its own catalogue: Microsoft the company
-          lives on Massive Stocks as MSFT-USD, while Massive Futures lists CME stock futures
-          on Microsoft such as SMSFTU6-USD. Pick the source that matches the user's intent.
+        Use this before import_candles() when the user names a company rather than an
+        exact Jesse symbol, or when an import fails with a symbol-not-found error.
+        Ticker prefixes rank first, then symbols whose catalogued company name contains the query
+        (e.g. "reliance" matches "RELIANCE-INR" on NSE or BSE).
 
         Pass the returned `symbol` value verbatim to import_candles().
         """
@@ -709,12 +629,12 @@ def register_candles_tools(mcp):
         """Duplicate stored candles under another exchange name (and optionally another symbol).
 
         Use this when the user wants to backtest data they already imported as if it belonged
-        to a different market, for example run Massive Stocks "SPY-USD" under
-        "Binance Perpetual Futures" as "SPY-USDT" to use that exchange's futures simulation.
+        to a different market, for example run NSE "RELIANCE-INR" under "BSE" to compare an
+        NSE-imported history against a BSE-listed run.
         The whole stored one-minute series is copied (backtests generate every other timeframe
         from it at run time, so they follow automatically). `target_exchange` must be a backtesting-capable
         exchange name exactly as Jesse lists it, and `target_symbol` defaults to `symbol`;
-        set it when the target market quotes in another currency (USD vs USDT).
+        set it when the target exchange lists the same security under a different ticker.
 
         The copy refuses to run if the target already has candles, so nothing is ever merged.
         With `delete_source=True` the original is removed in the same transaction (a rename);

@@ -17,6 +17,7 @@ from jesse.services import report
 from jesse.services import candle_service
 from jesse.services.file import store_logs
 from jesse.services.validators import validate_routes, is_daily_bars_only
+from jesse.services.session_calendar import has_session_later_in_week
 from jesse.store import store
 from jesse.services import logger
 from jesse.services.failure import register_custom_exception_handler
@@ -588,7 +589,11 @@ def _timestamp_replay_common_start(candles: dict) -> int:
         candle_array = candles[key]['candles']
         timeframe_ms = TIMEFRAME_TO_ONE_MINUTES[route.timeframe] * 60_000
         bucket_starts = np.unique(
-            (candle_array[:, 0].astype(np.int64) // timeframe_ms) * timeframe_ms
+            jh.timeframe_bucket_start(
+                candle_array[:, 0].astype(np.int64),
+                route.timeframe,
+                monday_weeks=is_daily_bars_only(route.exchange),
+            )
         )
         if len(bucket_starts) <= deficit:
             raise exceptions.CandlesNotFound(
@@ -610,6 +615,7 @@ def _timestamp_bucket_generation_schedule(
         candles: np.ndarray,
         generating_timeframes: list[tuple[str, int]],
         daily_bars_only: bool = False,
+        exchange: str = None,
 ) -> dict[int, list[tuple[str, int]]]:
     """Map each completed nonempty clock bucket to its first observed availability event.
 
@@ -621,20 +627,43 @@ def _timestamp_bucket_generation_schedule(
     since there is no later row to search past it. Every other source keeps the original
     first-observed-availability rule untouched (see tests/test_parent_strategy.py's sparse-gap
     coverage and TestLongSparseGap).
+
+    1W buckets on a daily-bars-only source (`exchange` is required whenever `daily_bars_only`
+    is True) additionally need `monday_weeks` bucketing (see `jh.timeframe_bucket_start`) and a
+    narrower release rule than 1D: a non-final week's own last row is always safe to release,
+    because the existence of a later row in a different (later) bucket is itself proof the week
+    is over - a look-ahead of at most a few sparse mid-week gap days (e.g. a suspension), same
+    tradeoff as 1D. But the very last week in the series has no later row to prove that, so it is
+    released off its own last row only if `has_session_later_in_week` confirms the exchange
+    calendar has no further session left in that week - otherwise it is left unreleased (not
+    just delayed) as still-forming. This matters because a day-by-day paper-replay backtest
+    (#49/#53) reaches that bucket exactly when a later, full backtest would, so both must agree
+    on whether the week is "complete" - unlike 1D, where every source row already produces a
+    complete bucket.
     """
     schedule: dict[int, list[tuple[str, int]]] = {}
     event_times = candles[:, 0].astype(np.int64) + 60_000
     timestamps = candles[:, 0].astype(np.int64)
     for timeframe, timeframe_minutes in generating_timeframes:
         timeframe_ms = timeframe_minutes * 60_000
-        bucket_starts = (timestamps // timeframe_ms) * timeframe_ms
+        monday_weeks = daily_bars_only and timeframe == timeframes.WEEK_1
+        bucket_starts = jh.timeframe_bucket_start(timestamps, timeframe, monday_weeks=monday_weeks)
         boundaries = np.flatnonzero(np.diff(bucket_starts)) + 1
         starts = np.concatenate(([0], boundaries))
         if daily_bars_only:
             bucket_ends = np.concatenate((boundaries, [len(bucket_starts)]))
+        last_bucket_index = len(starts) - 1
         for bucket_index, start in enumerate(starts):
             if daily_bars_only:
                 release_index = int(bucket_ends[bucket_index]) - 1
+                if (
+                    timeframe == timeframes.WEEK_1
+                    and bucket_index == last_bucket_index
+                    and has_session_later_in_week(exchange, int(timestamps[release_index]))
+                ):
+                    # Final, still-forming week: no later row and the calendar
+                    # confirms more sessions remain - don't release it as complete.
+                    continue
             else:
                 bucket_end = int(bucket_starts[start]) + timeframe_ms
                 release_index = int(np.searchsorted(event_times, bucket_end, side='left'))
@@ -669,6 +698,7 @@ def _build_timestamp_replay_plan(
             candle_array,
             generating_timeframes,
             daily_bars_only=is_daily_bars_only(candles[key]['exchange']),
+            exchange=candles[key]['exchange'],
         )
         for release_index, updates in schedule.items():
             if release_index < first_trading_index:
@@ -717,6 +747,7 @@ def _prepare_timestamp_replay_warmup(candles: dict, common_start: int) -> None:
                 timeframe,
                 visible_source,
                 common_start,
+                monday_weeks=is_daily_bars_only(exchange),
             )
             candle_service.batch_add_candle(
                 generated,
@@ -807,8 +838,13 @@ def _apply_timestamp_replay_event(
 
         for timeframe, start in aggregates_by_key.pop(key, []):
             timeframe_ms = TIMEFRAME_TO_ONE_MINUTES[timeframe] * 60_000
-            bucket_start = int(candles[key]['candles'][start, 0])
-            bucket_start -= bucket_start % timeframe_ms
+            bucket_start = int(
+                jh.timeframe_bucket_start(
+                    int(candles[key]['candles'][start, 0]),
+                    timeframe,
+                    monday_weeks=is_daily_bars_only(exchange),
+                )
+            )
             visible_source = candle_service.get_candles(exchange, symbol, timeframes.MINUTE_1)
             source_start = int(np.searchsorted(visible_source[:, 0], bucket_start, side='left'))
             source_stop = int(np.searchsorted(
@@ -819,6 +855,7 @@ def _apply_timestamp_replay_event(
             generated = candle_service.generate_candle_from_observed_minutes(
                 timeframe,
                 visible_source[source_start:source_stop],
+                monday_weeks=is_daily_bars_only(exchange),
             )
             candle_service.add_candle(
                 generated,
@@ -893,8 +930,14 @@ def _apply_timestamp_replay_batch(
             candle_data = candles[key]
             exchange, symbol = candle_data['exchange'], candle_data['symbol']
             timeframe_ms = TIMEFRAME_TO_ONE_MINUTES[timeframe] * 60_000
-            bucket_start = int(candle_data['candles'][start, 0])
-            bucket_start -= bucket_start % timeframe_ms
+            daily_bars_only = is_daily_bars_only(exchange)
+            bucket_start = int(
+                jh.timeframe_bucket_start(
+                    int(candle_data['candles'][start, 0]),
+                    timeframe,
+                    monday_weeks=daily_bars_only,
+                )
+            )
             visible_source = candle_service.get_candles(exchange, symbol, timeframes.MINUTE_1)
             source_start = int(np.searchsorted(visible_source[:, 0], bucket_start, side='left'))
             source_stop = int(np.searchsorted(
@@ -905,6 +948,7 @@ def _apply_timestamp_replay_batch(
             generated = candle_service.generate_candle_from_observed_minutes(
                 timeframe,
                 visible_source[source_start:source_stop],
+                monday_weeks=daily_bars_only,
             )
             candle_service.add_candle(
                 generated,
@@ -918,7 +962,7 @@ def _apply_timestamp_replay_batch(
             # its bucket's real close, so `available_at` never equals the event time.
             if event is endpoint and (
                 int(generated[0]) + timeframe_ms == endpoint['time']
-                or is_daily_bars_only(exchange)
+                or daily_bars_only
             ):
                 updated_routes.add((exchange, symbol, timeframe))
 
@@ -2240,6 +2284,7 @@ def _update_all_routes_a_partial_candle(
             generated_candle = candle_service.generate_candle_from_observed_minutes(
                 timeframe,
                 storable_temp_candle[None, :],
+                monday_weeks=True,
             )
         else:
             tf_minutes = TIMEFRAME_TO_ONE_MINUTES[timeframe]

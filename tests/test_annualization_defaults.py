@@ -30,28 +30,31 @@ UNREGISTERED_EXCHANGE = 'Some Unregistered Test Exchange'
 # 1. jesse.services.simulation_assumptions helpers
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize('exchange_name', [exchanges.NSE, exchanges.BSE, exchanges.MASSIVE_STOCKS])
+@pytest.mark.parametrize('exchange_name', [exchanges.NSE, exchanges.BSE])
 def test_default_annualization_for_252_day_exchanges(exchange_name):
     assert default_annualization_for_exchange(exchange_name) == 252
 
 
-@pytest.mark.parametrize('exchange_name', [exchanges.BINANCE_SPOT, UNREGISTERED_EXCHANGE])
+# SANDBOX is a real enum member with no `exchange_info` entry (it's test-only plumbing,
+# see jesse/testing_utils.py), so it exercises the same "registered name, no annualization
+# override" fallback path that a non-252-day exchange used to.
+@pytest.mark.parametrize('exchange_name', [exchanges.SANDBOX, UNREGISTERED_EXCHANGE])
 def test_default_annualization_for_365_day_and_unregistered_exchanges(exchange_name):
     assert default_annualization_for_exchange(exchange_name) == 365
 
 
 def test_resolve_annualization_for_exchange_defaults_to_the_exchanges_registered_value():
-    # Omitted 'annualization' -> NSE's registered 252, not the crypto-oriented 365.
+    # Omitted 'annualization' -> NSE's registered 252, not the calendar-day 365 default.
     assert resolve_annualization_for_exchange({}, exchanges.NSE) == 252
-    # Omitted 'annualization' on a crypto exchange still resolves to 365.
-    assert resolve_annualization_for_exchange({}, exchanges.BINANCE_SPOT) == 365
+    # Omitted 'annualization' on an exchange with no registered override still resolves to 365.
+    assert resolve_annualization_for_exchange({}, exchanges.SANDBOX) == 365
 
 
 def test_explicit_annualization_wins_over_the_exchange_default():
     # Explicit 365 on NSE (which defaults to 252) is honored.
     assert resolve_annualization_for_exchange({'annualization': 365}, exchanges.NSE) == 365
-    # Explicit 252 on a crypto exchange (which defaults to 365) is honored.
-    assert resolve_annualization_for_exchange({'annualization': 252}, exchanges.BINANCE_SPOT) == 252
+    # Explicit 252 on an exchange with no registered override (which defaults to 365) is honored.
+    assert resolve_annualization_for_exchange({'annualization': 252}, exchanges.SANDBOX) == 252
 
 
 @pytest.mark.parametrize('invalid_value', [360, 252.9, 'foo', True])

@@ -15,12 +15,6 @@ from .contracts import (
     SymbolCatalogEntry,
 )
 from .registry import HistoricalCandleProviderRegistry
-from .massive_stocks import (
-    MassiveCurrenciesProvider,
-    MassiveFuturesProvider,
-    MassiveIndicesProvider,
-    MassiveStocksProvider,
-)
 
 __all__ = [
     'AdjustmentMode',
@@ -36,10 +30,6 @@ __all__ = [
     'HistoricalDataQualitySummary',
     'HistoricalDataSourceType',
     'InstrumentType',
-    'MassiveCurrenciesProvider',
-    'MassiveFuturesProvider',
-    'MassiveIndicesProvider',
-    'MassiveStocksProvider',
     'ProviderCapabilities',
     'SymbolCatalogEntry',
 ]

@@ -15,8 +15,8 @@ from jesse.repositories import candle_repository
 from jesse.services import auth
 
 
-SOURCE = ('Massive Stocks', 'SPY-USD')
-TARGET = ('Binance Perpetual Futures', 'SPY-USDT')
+SOURCE = ('NSE', 'RELIANCE-INR')
+TARGET = ('BSE', 'RELIANCE-EQ')
 PASSWORD = 'test-password'
 AUTHORIZATION = sha256(PASSWORD.encode('utf-8')).hexdigest()
 
@@ -98,11 +98,11 @@ def test_copy_candles_can_move_the_series(sqlite_candles):
     _seed_source(minutes=6, extra_timeframes=())
     source_before = _series(*SOURCE)
 
-    result = candle_repository.copy_candles(*SOURCE, SOURCE[0], 'SPY-USDT', delete_source=True)
+    result = candle_repository.copy_candles(*SOURCE, SOURCE[0], 'RELIANCE-BE', delete_source=True)
 
     assert result == {'copied': 6, 'deleted': 6}
     assert _series(*SOURCE) == []
-    assert _series(SOURCE[0], 'SPY-USDT') == source_before
+    assert _series(SOURCE[0], 'RELIANCE-BE') == source_before
 
 
 def test_copy_candles_refuses_self_missing_source_and_occupied_target(sqlite_candles):
@@ -112,7 +112,7 @@ def test_copy_candles_refuses_self_missing_source_and_occupied_target(sqlite_can
     with pytest.raises(ValueError, match='must differ'):
         candle_repository.copy_candles(*SOURCE, *SOURCE)
     with pytest.raises(ValueError, match='No candles are stored'):
-        candle_repository.copy_candles('Binance Spot', 'BTC-USDT', *TARGET)
+        candle_repository.copy_candles('NSE', 'MISSING-INR', *TARGET)
     with pytest.raises(candle_repository.CandlesAlreadyExist):
         candle_repository.copy_candles(*SOURCE, *TARGET)
 
@@ -142,33 +142,34 @@ def test_copy_endpoint_validates_target_and_reports_the_copy(api_client, monkeyp
 
     def fake_copy(exchange, symbol, target_exchange, target_symbol, delete_source=False):
         calls.append((exchange, symbol, target_exchange, target_symbol, delete_source))
-        if target_symbol == 'TAKEN-USDT':
+        if target_symbol == 'TAKEN-INR':
             raise candle_repository.CandlesAlreadyExist('taken')
         return {'copied': 42, 'deleted': 42 if delete_source else 0}
 
     monkeypatch.setattr(candle_repository, 'copy_candles', fake_copy)
 
-    base = {'exchange': 'Massive Stocks', 'symbol': 'SPY-USD'}
-    ok = api_client.post('/candles/copy', json={**base, 'target_exchange': 'Binance Perpetual Futures', 'target_symbol': 'spy-usdt'}, headers=_headers())
+    base = {'exchange': 'NSE', 'symbol': 'RELIANCE-INR'}
+    ok = api_client.post('/candles/copy', json={**base, 'target_exchange': 'BSE', 'target_symbol': 'reliance-eq'}, headers=_headers())
     assert ok.status_code == 200
     assert ok.json() == {
-        'message': 'Copied 42 candles from SPY-USD on Massive Stocks to SPY-USDT on Binance Perpetual Futures',
+        'message': 'Copied 42 candles from RELIANCE-INR on NSE to RELIANCE-EQ on BSE',
         'copied_count': 42,
         'deleted_count': 0,
-        'target_exchange': 'Binance Perpetual Futures',
-        'target_symbol': 'SPY-USDT',
+        'target_exchange': 'BSE',
+        'target_symbol': 'RELIANCE-EQ',
     }
-    assert calls[-1] == ('Massive Stocks', 'SPY-USD', 'Binance Perpetual Futures', 'SPY-USDT', False)
+    assert calls[-1] == ('NSE', 'RELIANCE-INR', 'BSE', 'RELIANCE-EQ', False)
 
-    moved = api_client.post('/candles/copy', json={**base, 'target_exchange': 'Custom Data', 'delete_source': True}, headers=_headers())
+    moved = api_client.post('/candles/copy', json={**base, 'target_exchange': 'BSE', 'delete_source': True}, headers=_headers())
     assert moved.status_code == 200
     assert moved.json()['message'].startswith('Moved 42 candles')
-    assert calls[-1] == ('Massive Stocks', 'SPY-USD', 'Custom Data', 'SPY-USD', True)
+    assert calls[-1] == ('NSE', 'RELIANCE-INR', 'BSE', 'RELIANCE-INR', True)
 
+    # 'Not An Exchange' fails the backtesting_exchanges membership check (only NSE/BSE remain).
     assert api_client.post('/candles/copy', json={**base, 'target_exchange': 'Not An Exchange'}, headers=_headers()).status_code == 422
-    assert api_client.post('/candles/copy', json={**base, 'target_exchange': 'Custom Data', 'target_symbol': 'SPYUSD'}, headers=_headers()).status_code == 422
-    assert api_client.post('/candles/copy', json={**base, 'target_exchange': 'Custom Data', 'target_symbol': 'TAKEN-USDT'}, headers=_headers()).status_code == 409
-    assert api_client.post('/candles/copy', json={**base, 'target_exchange': 'Custom Data'}).status_code == 401
+    assert api_client.post('/candles/copy', json={**base, 'target_exchange': 'BSE', 'target_symbol': 'RELIANCEINR'}, headers=_headers()).status_code == 422
+    assert api_client.post('/candles/copy', json={**base, 'target_exchange': 'BSE', 'target_symbol': 'TAKEN-INR'}, headers=_headers()).status_code == 409
+    assert api_client.post('/candles/copy', json={**base, 'target_exchange': 'BSE'}).status_code == 401
     assert len(calls) == 3
 
 
@@ -179,7 +180,7 @@ def test_copy_candles_mcp_service_forwards_the_request(monkeypatch):
         captured.update(url=url, json=json)
         payload = {
             'message': 'Copied 5 candles', 'copied_count': 5, 'deleted_count': 0,
-            'target_exchange': 'Binance Perpetual Futures', 'target_symbol': 'SPY-USDT',
+            'target_exchange': 'BSE', 'target_symbol': 'RELIANCE-EQ',
         }
         return SimpleNamespace(status_code=200, json=lambda: payload, text='')
 
@@ -187,16 +188,16 @@ def test_copy_candles_mcp_service_forwards_the_request(monkeypatch):
     monkeypatch.setattr(candles_service.mcp_config, 'JESSE_PASSWORD', 'pw')
     monkeypatch.setattr('requests.post', fake_post)
 
-    result = candles_service.copy_candles_service('Massive Stocks', 'SPY-USD', 'Binance Perpetual Futures', 'SPY-USDT')
+    result = candles_service.copy_candles_service('NSE', 'RELIANCE-INR', 'BSE', 'RELIANCE-EQ')
 
     assert captured['url'] == 'http://jesse.test/candles/copy'
     assert captured['json'] == {
-        'exchange': 'Massive Stocks', 'symbol': 'SPY-USD', 'target_exchange': 'Binance Perpetual Futures',
-        'target_symbol': 'SPY-USDT', 'delete_source': False,
+        'exchange': 'NSE', 'symbol': 'RELIANCE-INR', 'target_exchange': 'BSE',
+        'target_symbol': 'RELIANCE-EQ', 'delete_source': False,
     }
     assert result['status'] == 'success'
     assert result['action'] == 'candles_copied'
-    assert result['target'] == {'exchange': 'Binance Perpetual Futures', 'symbol': 'SPY-USDT'}
+    assert result['target'] == {'exchange': 'BSE', 'symbol': 'RELIANCE-EQ'}
     assert result['copied_count'] == 5
 
 

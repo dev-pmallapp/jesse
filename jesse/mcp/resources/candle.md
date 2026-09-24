@@ -1,12 +1,12 @@
 # Candle Management Reference
 
-This reference covers candle import and management operations in Jesse.
+This reference covers candle import and management operations in Jesse. This fork supports NSE and BSE (spot equity, daily bars only).
 
 ## Data Requirements
 
 Historical candle data is required for backtesting strategies. Import data for every route's exchange and symbol before running backtests.
 
-Jesse imports and stores **one-minute candles only**, for every source (crypto exchanges, Massive, Custom Data). In backtests, optimization, Monte Carlo, significance tests and research, every other timeframe is generated from those minutes at run time, so a single import per exchange and symbol covers every timeframe a route or `get_candles()` asks for. Live and paper sessions are different: by default each timeframe's candles come from the exchange, and only when the live setting `generate_candles_from_1m` is enabled are bigger timeframes generated locally from one-minute candles. Timeframes are never imported, so when checking coverage only confirm that the symbol's data spans the backtest dates plus warm-up.
+Jesse imports and stores **one-minute candles only**. For NSE and BSE that means one 1m row per trading session, stamped at 15:29 IST and carrying the whole session's OHLCV. In backtests, optimization, Monte Carlo, significance tests and research, `1D` and `1W` candles are built from those session rows at run time, so a single import per exchange and symbol covers every timeframe a route or `get_candles()` asks for (valid timeframes: `1D` for daily and `1W` for weekly). Timeframes are never imported, so when checking coverage only confirm that the symbol's data spans the backtest dates plus warm-up.
 
 ## Import Process
 
@@ -36,99 +36,72 @@ Checks what candle data is currently available in the database.
 
 ### search_symbols()
 
-Finds importable symbols on one candle source. Use it when the user names an instrument
-("Microsoft", "crude oil", "the S&P 500 index") instead of an exact Jesse symbol, or when an
-import fails with a symbol-not-found error.
+Finds importable symbols on NSE or BSE. Use it when the user names an Indian stock or ETF instead of an exact Jesse symbol, or when an import fails with a symbol-not-found error.
 
 **Parameters:**
-- `exchange`: Candle source name exactly as Jesse lists it (e.g., "Massive Stocks")
-- `query`: Ticker prefix or part of the instrument name (e.g., "MSFT", "microsoft")
+- `exchange`: Exchange name, either "NSE" or "BSE"
+- `query`: Stock ticker, company name, or part of the symbol (e.g., "RELIANCE", "TCS", "infosys")
 - `limit` (optional): Maximum matches, default 20, maximum 200
 
-**Ranking:** ticker prefixes first, then symbols whose provider name contains the query.
+**Ranking:** ticker prefixes first, then names that contain the query.
 
-**Returns:** `matches`, each with `symbol` plus any provider details:
+**Returns:** `matches`, each with `symbol` and other details:
 
 ```python
-search_symbols(exchange="Massive Stocks", query="microsoft")
-# {"status": "success", "match_count": 3, "catalog_size": 13152, "matches": [
-#   {"symbol": "MSFT-USD", "name": "Microsoft Corp", "kind": "Common Stock", "venue": "NASDAQ"},
-#   {"symbol": "MSFX-USD", "name": "T-Rex 2X Long Microsoft Daily Target ETF", "kind": "ETF", "venue": "Cboe BZX"},
+search_symbols(exchange="NSE", query="reliance")
+# {"status": "success", "match_count": 2, "matches": [
+#   {"symbol": "RELIANCE-INR", "name": "Reliance Industries Limited"},
+#   {"symbol": "NIFTYBEES-INR", "name": "Nifty Bees ETF"},
 #   ...
 # ]}
 ```
 
-Source-specific behavior:
-- Crypto exchanges (e.g., "Binance Perpetual Futures") match tickers only and return bare
-  `{"symbol": ...}` entries. Searching "bitcoin" there returns nothing; search "BTC".
-- "Massive Stocks" (stocks and ETFs), "Massive Currencies" (forex and crypto pairs),
-  "Massive Indices", and "Massive Futures" also match names, and entries carry `name`,
-  `kind`, `venue`, and for futures `expiry`.
-- Every source has its own catalogue. Microsoft the company is `MSFT-USD` on Massive Stocks;
-  Massive Futures instead lists CME stock futures on Microsoft such as `SMSFTU6-USD`
-  ("Microsoft Corp Stock Futures", expires 2026-09-18). Choose the source that matches the
-  user's intent and pass the returned `symbol` to `import_candles()` verbatim.
-- Massive sources require a stored Massive API key; see `jesse://credentials`.
+Pass the returned `symbol` to `import_candles()` verbatim.
 
 ### copy_candles()
 
-Duplicates stored candles under another exchange name (and optionally another symbol) so a
-backtest can select the same data as a different market, for example to run Massive Stocks
-`SPY-USD` under `Binance Perpetual Futures` as `SPY-USDT` and use that exchange's futures
-simulation settings.
+Duplicates stored candles under another exchange name (and optionally another symbol) for testing or data management.
 
 **Parameters:**
 - `exchange`, `symbol`: the stored source series
-- `target_exchange`: a backtesting-capable exchange name exactly as Jesse lists it
-- `target_symbol` (optional): defaults to `symbol`; change it when the target quotes in another
-  currency (`USD` vs `USDT`)
+- `target_exchange`: target exchange ("NSE" or "BSE")
+- `target_symbol` (optional): defaults to `symbol`
 - `delete_source` (optional, default false): remove the original in the same transaction
 
-Rules: the whole stored one-minute series is copied, which is everything a backtest needs for any timeframe; the call is refused (HTTP 409) when the target already
-holds candles, so series are never merged; deleting the source turns the copy into a rename, but
-provider updates only work under the original exchange name, so confirm with the user first.
+Rules: the whole stored daily series is copied, which is everything a backtest needs for any timeframe; the call is refused (HTTP 409) when the target already holds candles, so series are never merged.
 
 **Returns:** `copied_count`, `deleted_count`, and the resolved target.
 
 ### import_candles()
 
-Imports historical candle data from exchanges.
+Imports historical daily candle data from NSE or BSE.
 
 **Parameters:**
-- `exchange`: Exchange name (e.g., "Binance Perpetual Futures")
-- `symbol`: Trading pair (e.g., "BTC-USDT")
+- `exchange`: Exchange name ("NSE" or "BSE")
+- `symbol`: Stock symbol (e.g., "RELIANCE-INR", "TCS-INR", "INFY-INR")
 - `start_date`: Start date in YYYY-MM-DD format
 - `import_id` (optional): Import ID for retrying failed imports
 
-**Timeframes:** the import has no timeframe parameter. One-minute candles are stored, and in
-backtests and the other research modes the timeframes usable in routes and `get_candles()` (1m,
-3m, 5m, 15m, 30m, 45m, 1h, 2h, 3h, 4h, 6h, 8h, 12h, 1D, 3D, 1W, 1M) are all built from them at run
-time. Live sessions fetch each timeframe from the exchange unless `generate_candles_from_1m` is on.
+**Timeframes:** the import stores daily candles. In backtests and research modes, higher timeframes like `1W` are built from daily candles at run time. Valid timeframes for routes and `get_candles()` are `1D` (daily) and `1W` (weekly).
 
 **Returns:** Import result with status and import ID
 
-## Traditional Markets and Gapped Data
+## Market Hours and Gapped Data
 
-Massive sources and Custom Data describe markets that close, so their one-minute series has real
-gaps (nights, weekends, holidays; pre-market and after-hours bars are kept where the provider has
-them). Jesse never fabricates candles for a closure:
+NSE and BSE are closed on weekends and holidays, so their daily series has real gaps. Jesse never fabricates candles for a closure:
 
-- Backtests detect gapped data automatically and replay only the candles that exist. Bigger
-  timeframes are built from the observed minutes in clock-aligned buckets.
-- Warm-up is counted in **completed observed candles** of the route's timeframe, not calendar
-  time, so import noticeably more history than a crypto backtest would need.
+- Backtests detect gapped data automatically and replay only the candles that exist. Weekly candles are built from the observed daily bars.
+- Warm-up is counted in **completed observed candles** of the route's timeframe (daily or weekly), not calendar time.
 - A resting order crossed by an opening gap fills at the **open price**, not at its own price.
-- Metrics for these sources annualize on 252 observations by default instead of 365.
-- To trade a stock-linked instrument on a 24/7 exchange with matching indicator history, use the
-  trading-hours helpers described in `jesse://strategy`.
+- Metrics annualize on 252 trading days by default.
 
 ## Usage Examples
 
-### Basic Import
+### Basic Import (NSE)
 ```python
 result = import_candles(
-    exchange="Binance Spot",
-    symbol="BTC-USDT",
+    exchange="NSE",
+    symbol="RELIANCE-INR",
     start_date="2024-01-01"
 )
 ```
@@ -137,8 +110,8 @@ result = import_candles(
 ```python
 # First attempt
 result = import_candles(
-    exchange="Binance Spot",
-    symbol="ETH-USDT",
+    exchange="NSE",
+    symbol="TCS-INR",
     start_date="2024-01-01"
 )
 
@@ -146,8 +119,8 @@ result = import_candles(
 if result.get("status") != "success":
     import_id = result.get("import_id")
     retry_result = import_candles(
-        exchange="Binance Spot",
-        symbol="ETH-USDT",
+        exchange="NSE",
+        symbol="TCS-INR",
         start_date="2024-01-01",
         import_id=import_id
     )

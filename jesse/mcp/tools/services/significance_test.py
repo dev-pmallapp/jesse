@@ -129,8 +129,8 @@ def _post_notes(api_url: str, auth: str, session_id: str, title: Optional[str],
 
 
 def create_significance_test_draft_service(
-    exchange: str = "Binance Perpetual Futures",
-    routes: str = '[{"exchange": "Binance Perpetual Futures", "strategy": "ExampleStrategy", "symbol": "BTC-USDT", "timeframe": "4h"}]',
+    exchange: str = "NSE",
+    routes: str = '[{"exchange": "NSE", "strategy": "ExampleStrategy", "symbol": "RELIANCE-INR", "timeframe": "1D"}]',
     data_routes: str = '[]',
     start_date: str = "2021-01-01",
     finish_date: str = "2022-01-01",

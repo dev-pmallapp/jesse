@@ -65,7 +65,7 @@ metrics (smallest train→test degradation), among the strong performers.
 
 ### create_optimization_draft()
 Stages a draft you can then run.
-- `exchange` (default `"Binance Perpetual Futures"`)
+- `exchange` (default `"NSE"`)
 - `routes` — JSON string array of route objects
 - `data_routes` — JSON string array (default `"[]"`)
 - `training_start_date`, `training_finish_date` — `YYYY-MM-DD`
@@ -74,7 +74,7 @@ Stages a draft you can then run.
 - `objective_function` — str (default `"sharpe"`; see list above)
 - `trials` — int, per hyperparameter (default 200)
 - `best_candidates_count` — int (default 20)
-- `warm_up_candles` — int (default 210)
+- `warm_up_candles` — int, number of daily bars for warm-up (default 210)
 - `fast_mode` — bool (default True)
 - `cpu_cores` — int (default `cpu_count - 1`, capped at 4)
 - `title`, `description`, `strategy_summary`, `hypothesis`, `rationale` — optional
@@ -176,12 +176,12 @@ User-facing language: say **"checking for results"** in chat, not "polling".
 ```python
 # 1. Stage the optimization (train then test, contiguous windows)
 draft = create_optimization_draft(
-    exchange="Binance Perpetual Futures",
-    routes='[{"exchange":"Binance Perpetual Futures","strategy":"MyStrategy","symbol":"BTC-USDT","timeframe":"4h"}]',
+    exchange="NSE",
+    routes='[{"exchange":"NSE","strategy":"MyStrategy","symbol":"RELIANCE-INR","timeframe":"1D"}]',
     training_start_date="2023-01-01", training_finish_date="2024-06-01",
     testing_start_date="2024-06-01",  testing_finish_date="2024-12-01",
     objective_function="sharpe", trials=100,
-    hypothesis="MyStrategy's EMA periods generalize out-of-sample.",
+    hypothesis="MyStrategy's EMA periods generalize out-of-sample on NSE data.",
 )
 sid = draft["session_id"]
 

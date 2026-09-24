@@ -97,7 +97,7 @@ def test_session_config_uses_exchange_saved_defaults_and_explicit_overrides():
                     'exchange': {'balance': 9_000},
                 },
                 'by_exchange': {
-                    'Binance Spot': {
+                    'NSE': {
                         'warm_up_candles': 500,
                         'exchange': {
                             'balance': 12_000,
@@ -113,7 +113,7 @@ def test_session_config_uses_exchange_saved_defaults_and_explicit_overrides():
     config = resolve_session_run_config(
         settings,
         'optimization',
-        'Binance Spot',
+        'NSE',
         {'warm_up_candles': 600},
     )
 
@@ -127,16 +127,18 @@ def test_session_config_uses_exchange_saved_defaults_and_explicit_overrides():
         'exchange',
     }
     assert config['exchange'] == {
-        'name': 'Binance Spot',
+        'name': 'NSE',
         'type': 'spot',
         'balance': 12_000,
-        'fee': 0.001,
+        # NSE's registered fee (jesse/info.py) is 0.0: execution costs are a run setting
+        # for the India historical-data source, not a per-exchange constant like Binance's.
+        'fee': 0.0,
     }
 
     significance = resolve_session_run_config(
         {'significance_test': {'cpu_cores': 8, 'warm_up_candles': 123}},
         'significance_test',
-        'Binance Spot',
+        'NSE',
     )
     assert set(significance) == {'warm_up_candles', 'exchange'}
 
@@ -174,7 +176,7 @@ def test_mcp_drafts_store_session_owned_config(
 ):
     route = json.dumps([
         {
-            'exchange': 'Binance Spot',
+            'exchange': 'NSE',
             'strategy': 'ExampleStrategy',
             'symbol': 'BTC-USDT',
             'timeframe': '4h',
@@ -184,12 +186,12 @@ def test_mcp_drafts_store_session_owned_config(
     monkeypatch.setattr(service, 'hash_password', lambda password: 'hashed')
     monkeypatch.setattr(service, 'load_session_run_config', _spot_config)
 
-    result = creator(exchange='Binance Spot', routes=route)
+    result = creator(exchange='NSE', routes=route)
 
     assert result['status'] == 'success'
     stored = result['draft_state']['form']['config']
     assert mode_specific_key in stored
-    assert stored['exchange']['name'] == 'Binance Spot'
+    assert stored['exchange']['name'] == 'NSE'
     assert stored['exchange']['type'] == 'spot'
     assert 'futures_leverage' not in stored['exchange']
     assert 'futures_leverage_mode' not in stored['exchange']
@@ -198,7 +200,7 @@ def test_mcp_drafts_store_session_owned_config(
 def test_backtest_engine_config_keeps_the_session_exchange_snapshot():
     stored = _spot_config(
         'backtest',
-        'Binance Spot',
+        'NSE',
         {
             'warm_up_candles': 321,
             'exchange': {'balance': 5_000, 'fee': 0.002},
@@ -209,8 +211,8 @@ def test_backtest_engine_config_keeps_the_session_exchange_snapshot():
 
     assert engine['warm_up_candles'] == 321
     assert engine['exchanges'] == {
-        'Binance Spot': {
-            'name': 'Binance Spot',
+        'NSE': {
+            'name': 'NSE',
             'type': 'spot',
             'balance': 5_000,
             'fee': 0.002,
@@ -220,7 +222,7 @@ def test_backtest_engine_config_keeps_the_session_exchange_snapshot():
 
 def test_optimization_launch_migrates_flat_draft_config(monkeypatch):
     form = {
-        'exchange': 'Binance Spot',
+        'exchange': 'NSE',
         'routes': [],
         'data_routes': [],
         'objective_function': 'calmar',
@@ -249,7 +251,7 @@ def test_optimization_launch_migrates_flat_draft_config(monkeypatch):
 
 def test_monte_carlo_launch_migrates_flat_draft_config(monkeypatch):
     form = {
-        'exchange': 'Binance Spot',
+        'exchange': 'NSE',
         'routes': [],
         'data_routes': [],
         'warm_up_candles': 456,
@@ -272,10 +274,10 @@ def test_monte_carlo_launch_migrates_flat_draft_config(monkeypatch):
 def test_significance_test_launch_migrates_draft_config(monkeypatch):
     state = {
         'form': {
-            'exchange': 'Binance Spot',
+            'exchange': 'NSE',
             'routes': [
                 {
-                    'exchange': 'Binance Spot',
+                    'exchange': 'NSE',
                     'strategy': 'ExampleStrategy',
                     'symbol': 'BTC-USDT',
                     'timeframe': '4h',

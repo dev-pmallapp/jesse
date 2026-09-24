@@ -60,40 +60,36 @@ def test_credential_and_symbol_tools_are_registered():
         'get_exchange_api_keys',
         'store_exchange_api_key',
         'delete_exchange_api_key',
-        'get_data_provider_credentials',
-        'store_data_provider_credentials',
-        'delete_data_provider_credentials',
-        'validate_data_provider_credentials',
     ):
         assert name in mcp.tools, name
     assert 'never repeat the full key' in mcp.tools['store_exchange_api_key'].__doc__
-    assert 'Massive Futures lists CME stock futures' in mcp.tools['search_symbols'].__doc__
+    assert 'RELIANCE-INR' in mcp.tools['search_symbols'].__doc__
 
 
 def test_search_symbols_service_uses_the_shared_search_endpoint(mcp_backend):
     calls, queued = mcp_backend
     queued.append(_fake_response(200, {
-        'data': [{'symbol': 'MSFT-USD', 'name': 'Microsoft Corp', 'kind': 'Common Stock', 'venue': 'NASDAQ'}],
+        'data': [{'symbol': 'RELIANCE-INR', 'name': 'Reliance Industries', 'kind': 'Common Stock', 'venue': 'NSE'}],
         'catalog_size': 13152,
     }))
 
-    result = candles_service.search_symbols_service('Massive Stocks', 'microsoft', limit=5)
+    result = candles_service.search_symbols_service('NSE', 'reliance', limit=5)
 
     assert calls[0]['url'] == 'http://jesse.test/exchange/search-symbols'
-    assert calls[0]['json'] == {'exchange': 'Massive Stocks', 'query': 'microsoft', 'limit': 5}
+    assert calls[0]['json'] == {'exchange': 'NSE', 'query': 'reliance', 'limit': 5}
     assert calls[0]['headers']['Authorization'] != 'test-password'
     assert result['status'] == 'success'
     assert result['match_count'] == 1
     assert result['catalog_size'] == 13152
-    assert result['matches'][0]['symbol'] == 'MSFT-USD'
+    assert result['matches'][0]['symbol'] == 'RELIANCE-INR'
 
     queued.append(_fake_response(200, {'data': [], 'catalog_size': 47961}))
-    miss = candles_service.search_symbols_service('Massive Futures', 'AAPL')
+    miss = candles_service.search_symbols_service('BSE', 'nonexistent')
     assert miss['match_count'] == 0
-    assert 'No symbol on Massive Futures matches' in miss['message']
+    assert 'No symbol on BSE matches' in miss['message']
 
-    queued.append(_fake_response(401, {'error': 'Massive API credentials are not configured'}))
-    failure = candles_service.search_symbols_service('Massive Stocks', 'msft')
+    queued.append(_fake_response(401, {'error': 'NSE API credentials are not configured'}))
+    failure = candles_service.search_symbols_service('NSE', 'reliance')
     assert failure['status'] == 'error'
     assert failure['http_status'] == 401
     assert 'not configured' in failure['message']
@@ -101,17 +97,17 @@ def test_search_symbols_service_uses_the_shared_search_endpoint(mcp_backend):
 
 def test_exchange_api_key_services_never_return_secrets(mcp_backend):
     calls, queued = mcp_backend
-    masked = {'id': 'key-1', 'exchange': 'Binance Perpetual Futures', 'name': 'Main', 'api_key': 'abcd***...***wxyz', 'api_secret': 'abcd***...***wxyz'}
+    masked = {'id': 'key-1', 'exchange': 'NSE', 'name': 'Main', 'api_key': 'abcd***...***wxyz', 'api_secret': 'abcd***...***wxyz'}
     queued.append(_fake_response(200, {'status': 'success', 'message': 'stored', 'data': masked}))
 
     stored = credentials_service.store_exchange_api_key_service(
-        'Binance Perpetual Futures', ' Main ', ' abcdKEYwxyz ', 'abcdSECRETwxyz', {'api_passphrase': ' pass '}
+        'NSE', ' Main ', ' abcdKEYwxyz ', 'abcdSECRETwxyz', {'api_passphrase': ' pass '}
     )
 
     assert calls[0]['method'] == 'POST'
     assert calls[0]['url'] == 'http://jesse.test/exchange/api-keys/store'
     assert calls[0]['json'] == {
-        'exchange': 'Binance Perpetual Futures',
+        'exchange': 'NSE',
         'name': 'Main',
         'api_key': 'abcdKEYwxyz',
         'api_secret': 'abcdSECRETwxyz',
@@ -131,37 +127,6 @@ def test_exchange_api_key_services_never_return_secrets(mcp_backend):
     assert calls[2]['json'] == {'id': 'key-1'}
     assert deleted['status'] == 'success'
 
-    assert credentials_service.store_exchange_api_key_service('Binance Spot', 'x', '', 'secret')['status'] == 'error'
+    assert credentials_service.store_exchange_api_key_service('NSE', 'x', '', 'secret')['status'] == 'error'
     assert credentials_service.delete_exchange_api_key_service('  ')['status'] == 'error'
     assert len(calls) == 3
-
-
-def test_data_provider_credential_services_report_status_and_conflicts(mcp_backend):
-    calls, queued = mcp_backend
-    status = {'provider_id': 'Massive', 'name': 'Massive', 'configured': True, 'created_at': 1, 'updated_at': 1, 'credential_fields': []}
-    queued.append(_fake_response(200, {'data': [status]}))
-
-    listed = credentials_service.get_data_provider_credentials_service()
-
-    assert calls[0]['url'] == 'http://jesse.test/data-providers/credentials'
-    assert listed['configured_providers'] == ['Massive']
-
-    queued.append(_fake_response(409, {'message': 'Delete the existing data provider credentials before adding new ones'}))
-    conflict = credentials_service.store_data_provider_credentials_service(' massive-key ')
-    assert calls[1]['json'] == {'provider_id': 'Massive', 'api_key': 'massive-key'}
-    assert conflict['status'] == 'error'
-    assert conflict['http_status'] == 409
-    assert 'Delete the existing' in conflict['message']
-
-    queued.append(_fake_response(200, {'status': 'success', 'message': 'deleted', 'data': {**status, 'configured': False}}))
-    assert credentials_service.delete_data_provider_credentials_service()['status'] == 'success'
-    assert calls[2]['json'] == {'provider_id': 'Massive'}
-
-    queued.append(_fake_response(200, {'status': 'success', 'message': 'The Massive API key is valid.'}))
-    validated = credentials_service.validate_data_provider_credentials_service()
-    assert calls[3]['url'] == 'http://jesse.test/data-providers/credentials/validate'
-    assert calls[3]['timeout'] == credentials_service.VALIDATION_TIMEOUT_SECONDS
-    assert validated['message'] == 'The Massive API key is valid.'
-
-    assert credentials_service.store_data_provider_credentials_service('   ')['status'] == 'error'
-    assert len(calls) == 4

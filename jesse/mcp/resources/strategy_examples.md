@@ -31,15 +31,14 @@ from jesse import utils
 ## TrendFollowingAI — preparing a strategy for optimization
 
 This pair shows the *before/after* of getting a strategy ready for Jesse's
-optimization mode. A multi-timeframe trend follower (futures, long + short)
-takes signals only when a 6h SMA stack and a base-timeframe SMA stack agree,
+optimization mode. A multi-timeframe trend follower (spot equity, long only)
+takes signals only when a weekly SMA stack and a daily SMA stack agree,
 gated by MACD histogram and ADX. It sets ATR-based stop-loss and take-profit in
 `on_open_position()` and exits early in `update_position()` when the fast/slow
 SMA cross flips or MACD turns.
 
 Features shown: multi-timeframe candles via `get_candles(self.exchange,
-self.symbol, '6h')`, `macd.hist`, `adx`, `atr`, `size_to_qty` sizing with a
-leverage multiplier, `on_open_position()`/`update_position()` hooks.
+self.symbol, '1W')`, `macd.hist`, `adx`, `atr`, `size_to_qty` sizing, `on_open_position()`/`update_position()` hooks.
 
 The plain version hardcodes every parameter:
 
@@ -52,11 +51,11 @@ from jesse import utils
 class TrendFollowingAI(Strategy):
     @property
     def longterm_small_ma(self):
-        return ta.sma(self.candles_6h, 50)
+        return ta.sma(self.candles_1w, 50)
 
     @property
     def longterm_big_ma(self):
-        return ta.sma(self.candles_6h, 200)
+        return ta.sma(self.candles_1w, 200)
 
     @property
     def small_ma(self):
@@ -88,29 +87,20 @@ class TrendFollowingAI(Strategy):
 
     def go_long(self):
         entry_price = self.price
-        qty = utils.size_to_qty(self.balance, entry_price) * 3
+        qty = utils.size_to_qty(self.balance, entry_price)
         self.buy = qty, entry_price
 
     def should_short(self) -> bool:
-        # Big-trend condition: bearish
-        if self.longterm_small_ma < self.longterm_big_ma and self.small_ma < self.big_ma:
-            if self.small_ma < self.big_ma and self.macd.hist < 0 and self.adx > 40:
-                return True
         return False
 
     def go_short(self) -> None:
-        entry_price = self.price
-        qty = utils.size_to_qty(self.balance, entry_price) * 3
-        self.sell = qty, entry_price
+        pass
 
     def on_open_position(self, order):
-        # Set stop-loss and take-profit using ATR (mirror the levels for shorts)
+        # Set stop-loss and take-profit using ATR
         if self.is_long:
             self.stop_loss = self.position.qty, self.price - self.atr * 1
             self.take_profit = self.position.qty, self.price + self.atr * 2
-        elif self.is_short:
-            self.stop_loss = self.position.qty, self.price + self.atr * 1
-            self.take_profit = self.position.qty, self.price - self.atr * 2
 
     def update_position(self):
         # Early exit when the trend or momentum turns
@@ -121,8 +111,8 @@ class TrendFollowingAI(Strategy):
         return False
 
     @property
-    def candles_6h(self):
-        return self.get_candles(self.exchange, self.symbol, '6h')
+    def candles_1w(self):
+        return self.get_candles(self.exchange, self.symbol, '1W')
 ```
 
 The prepared version replaces hardcoded numbers with `self.hp[...]` lookups and
@@ -141,11 +131,11 @@ from jesse import utils
 class TrendFollowingAI(Strategy):
     @property
     def longterm_small_ma(self):
-        return ta.sma(self.candles_6h, 50)
+        return ta.sma(self.candles_1w, 50)
 
     @property
     def longterm_big_ma(self):
-        return ta.sma(self.candles_6h, 200)
+        return ta.sma(self.candles_1w, 200)
 
     @property
     def small_ma(self):
@@ -175,27 +165,19 @@ class TrendFollowingAI(Strategy):
 
     def go_long(self):
         entry_price = self.price
-        qty = utils.size_to_qty(self.balance, entry_price) * 3
+        qty = utils.size_to_qty(self.balance, entry_price)
         self.buy = qty, entry_price
 
     def should_short(self) -> bool:
-        if self.longterm_small_ma < self.longterm_big_ma and self.small_ma < self.big_ma:
-            if self.small_ma < self.big_ma and self.macd.hist < 0 and self.adx > self.hp['adx_threshold']:
-                return True
         return False
 
     def go_short(self) -> None:
-        entry_price = self.price
-        qty = utils.size_to_qty(self.balance, entry_price) * 3
-        self.sell = qty, entry_price
+        pass
 
     def on_open_position(self, order):
         if self.is_long:
             self.stop_loss = self.position.qty, self.price - self.atr * self.hp['stop_loss_multiplier']
             self.take_profit = self.position.qty, self.price + self.atr * self.hp['take_profit_multiplier']
-        elif self.is_short:
-            self.stop_loss = self.position.qty, self.price + self.atr * self.hp['stop_loss_multiplier']
-            self.take_profit = self.position.qty, self.price - self.atr * self.hp['take_profit_multiplier']
 
     def update_position(self):
         if self.small_ma < self.big_ma or self.macd.hist < 0:
@@ -205,8 +187,8 @@ class TrendFollowingAI(Strategy):
         return False
 
     @property
-    def candles_6h(self):
-        return self.get_candles(self.exchange, self.symbol, '6h')
+    def candles_1w(self):
+        return self.get_candles(self.exchange, self.symbol, '1W')
 
     def hyperparameters(self) -> list:
         return [
@@ -223,14 +205,13 @@ class TrendFollowingAI(Strategy):
 ## AlligatorAi — preparing a strategy for live monitoring with `watch_list()`
 
 `watch_list()` returns a list of `(label, value)` tuples that Jesse surfaces in
-the live/paper dashboard so you can watch the indicators driving the strategy in
-real time. This Alligator-based futures strategy aligns a base-timeframe
-Alligator, a higher-timeframe Alligator, a higher-timeframe EMA, ADX, CMO, and
-Stochastic RSI before entering, sizes positions with `risk_to_qty`, and sets
-symmetric ATR stop/target in `on_open_position()`.
+the dashboard so you can watch the indicators driving the strategy in real time.
+This Alligator-based equity strategy (spot, long only) aligns a daily-timeframe
+Alligator, a weekly-timeframe Alligator, a weekly-timeframe EMA, ADX, CMO, and
+Stochastic RSI before entering, and sets ATR stop/target in `on_open_position()`.
 
 Features shown: `watch_list()`, multi-timeframe candles with a timeframe swap,
-`alligator` (`lips`/`teeth`/`jaw`), `srsi(...).k`, `cmo`, `adx`, `risk_to_qty`
+`alligator` (`lips`/`teeth`/`jaw`), `srsi(...).k`, `cmo`, `adx`, `size_to_qty`
 sizing.
 
 ```py
@@ -243,9 +224,9 @@ class AlligatorAi(Strategy):
     @property
     def long_term_candles(self):
         # Higher-timeframe candles for long-term trend analysis
-        big_tf = '4h'
-        if self.timeframe == '4h':
-            big_tf = '6h'
+        big_tf = '1W'
+        if self.timeframe == '1W':
+            big_tf = '1W'
         return self.get_candles(self.exchange, self.symbol, big_tf)
 
     @property
@@ -303,19 +284,16 @@ class AlligatorAi(Strategy):
         return self.trend == 1 and self.adx and self.big_trend == 1 and self.long_term_ma == 1 and self.cmo > 20 and self.srsi < 20
 
     def should_short(self) -> bool:
-        return self.trend == -1 and self.adx and self.big_trend == -1 and self.long_term_ma == -1 and self.cmo < -20 and self.srsi > 80
+        return False
 
     def go_long(self):
         entry = self.price
         stop = entry - ta.atr(self.candles) * 2
-        qty = utils.risk_to_qty(self.available_margin, 3, entry, stop, fee_rate=self.fee_rate) * 3
+        qty = utils.size_to_qty(self.available_margin, entry, fee_rate=self.fee_rate)
         self.buy = qty, entry
 
     def go_short(self):
-        entry = self.price
-        stop = entry + ta.atr(self.candles) * 2
-        qty = utils.risk_to_qty(self.available_margin, 3, entry, stop, fee_rate=self.fee_rate) * 3
-        self.sell = qty, entry
+        pass
 
     def should_cancel_entry(self) -> bool:
         return True
@@ -324,9 +302,6 @@ class AlligatorAi(Strategy):
         if self.is_long:
             self.stop_loss = self.position.qty, self.price - ta.atr(self.candles) * 2
             self.take_profit = self.position.qty, self.price + ta.atr(self.candles) * 2
-        if self.is_short:
-            self.stop_loss = self.position.qty, self.price + ta.atr(self.candles) * 2
-            self.take_profit = self.position.qty, self.price - ta.atr(self.candles) * 2
 
     def watch_list(self) -> list:
         return [
@@ -701,7 +676,7 @@ class IchimokuCloud(Strategy):
 
 ## Example 6 — TurtleAI
 
-A Turtle-style Donchian breakout (futures, long + short) over a 4h trend filter,
+A Turtle-style Donchian breakout (spot equity, long only) over a weekly trend filter,
 with a cooldown gate and an ATR trailing stop. It demonstrates a class-level
 attribute (`last_closed_index`) updated from `on_close_position()` to enforce a
 "wait one bar after a close" rule, draws the channel in `update_chart()`,
@@ -724,7 +699,7 @@ class TurtleAI(Strategy):
 
     @property
     def long_term_candles(self):
-        return self.get_candles(self.exchange, self.symbol, '4h')
+        return self.get_candles(self.exchange, self.symbol, '1W')
 
     @property
     def passed_time(self):
@@ -752,17 +727,14 @@ class TurtleAI(Strategy):
     def go_long(self):
         entry = self.price
         stop = self.price - ta.atr(self.candles) * 2.5
-        qty = utils.risk_to_qty(self.available_margin, 3, entry, stop, fee_rate=self.fee_rate) * 1.8
+        qty = utils.size_to_qty(self.available_margin, entry, fee_rate=self.fee_rate)
         self.buy = qty, entry
 
     def should_short(self) -> bool:
-        return self.price < self.donchian.lowerband and self.price < self.longterm_ma and self.adx and self.passed_time and self.chop
+        return False
 
     def go_short(self):
-        entry = self.price
-        stop = self.price + ta.atr(self.candles) * 2.5
-        qty = utils.risk_to_qty(self.available_margin, 3, entry, stop, fee_rate=self.fee_rate) * 1.8
-        self.sell = qty, entry
+        pass
 
     def should_cancel_entry(self) -> bool:
         return True
@@ -770,15 +742,11 @@ class TurtleAI(Strategy):
     def on_open_position(self, order) -> None:
         if self.is_long:
             self.stop_loss = self.position.qty, self.price - ta.atr(self.candles) * 2.5
-        elif self.is_short:
-            self.stop_loss = self.position.qty, self.price + ta.atr(self.candles) * 2.5
 
     def update_position(self) -> None:
         # ATR trailing stop: ratchet using the current (average) stop
         if self.is_long:
             self.stop_loss = self.position.qty, max(self.average_stop_loss, self.price - ta.atr(self.candles) * 2.5)
-        elif self.is_short:
-            self.stop_loss = self.position.qty, min(self.average_stop_loss, self.price + ta.atr(self.candles) * 2.5)
 
     def update_chart(self) -> None:
         self.add_line_to_candle_chart('upperband', self.donchian.upperband)
@@ -792,11 +760,10 @@ class TurtleAI(Strategy):
 
 ## Example 7 — K1
 
-A KAMA-trend strategy (futures, long + short) requiring agreement between a
-base-timeframe and a higher-timeframe KAMA trend, plus an ADX / Choppiness /
+A KAMA-trend strategy (spot equity, long only) requiring agreement between a
+daily and a weekly KAMA trend, plus an ADX / Choppiness /
 Bollinger-band-width "squeeze" confluence, with a per-trade cooldown counted in
-bars. It sizes with `risk_to_qty` and sets symmetric ATR stop/target in
-`on_open_position()`.
+bars. It sets ATR stop/target in `on_open_position()`.
 
 Features shown: `kama` trend, multi-timeframe with a timeframe swap, ADX/chop
 filters, `bollinger_bands_width(...) * 100 < 7` squeeze gate, class-level
@@ -814,9 +781,9 @@ class K1(Strategy):
 
     @property
     def long_term_candles(self):
-        big_tf = '4h'
-        if self.timeframe == '4h':
-            big_tf = '6h'
+        big_tf = '1W'
+        if self.timeframe == '1W':
+            big_tf = '1W'
         return self.get_candles(self.exchange, self.symbol, big_tf)
 
     @property
@@ -865,33 +832,21 @@ class K1(Strategy):
                 )
 
     def should_short(self) -> bool:
-        return (self.adx and
-                self.kama_trend == -1 and
-                self.big_kama_trend == -1 and
-                self.index - self.last_trade_index > 10 and
-                self.chop and
-                self.bbw
-                )
+        return False
 
     def go_long(self):
         entry = self.price
         stop = self.price - ta.atr(self.candles) * 2.5
-        qty = utils.risk_to_qty(self.available_margin, 3, entry, stop, fee_rate=self.fee_rate)
+        qty = utils.size_to_qty(self.available_margin, entry, fee_rate=self.fee_rate)
         self.buy = qty, self.price
 
     def go_short(self):
-        entry = self.price
-        stop = self.price + ta.atr(self.candles) * 2.5
-        qty = utils.risk_to_qty(self.available_margin, 3, entry, stop, fee_rate=self.fee_rate)
-        self.sell = qty, self.price
+        pass
 
     def on_open_position(self, order):
         if self.is_long:
             self.stop_loss = self.position.qty, self.price - (self.atr * 2.5)
             self.take_profit = self.position.qty, self.price + (self.atr * 2.5)
-        elif self.is_short:
-            self.stop_loss = self.position.qty, self.price + (self.atr * 2.5)
-            self.take_profit = self.position.qty, self.price - (self.atr * 2.5)
 
     def on_close_position(self, order, closed_trade) -> None:
         self.last_trade_index = self.index
@@ -949,8 +904,8 @@ class PairsTrading(Strategy):
             self.shared_vars["s1-position"] = 0
             self.shared_vars["s2-position"] = 0
 
-        # Re-check cointegration roughly every 24 hours
-        if self.index == 0 or self.index % (24 * 60 / utils.timeframe_to_one_minutes(self.timeframe)) == 0:
+        # Re-check cointegration roughly every week (7 days if using daily bars)
+        if self.index == 0 or self.index % (7) == 0:
             is_cointegrated = utils.are_cointegrated(self.c1[1:], self.c2[1:])
             if not is_cointegrated:
                 self.shared_vars["s1-position"] = 0
@@ -1029,30 +984,28 @@ class PairsTrading2(Strategy):
 
 ## Example 9 — SessionBreakout (trading hours)
 
-A Donchian breakout on a **stock-linked instrument traded on a 24/7 crypto exchange** (spot, long
-only). Entries are decided only during the US regular session and every entry indicator reads
-session candles only, so nights, weekends and the drift in between never reach the signal. The
-position itself is managed around the clock: exits are set in `on_open_position()` (spot rule),
-stay on the exchange, and the trailing stop in `update_position()` keeps following the live price
-outside the session.
+A Donchian breakout on NSE (spot, long only). Entries are decided only during
+NSE regular session (9:15–15:30 IST) and every entry indicator reads session candles only,
+so nights, weekends and holidays never reach the signal. Exits are set in
+`on_open_position()` and stay on the exchange, managed daily by the stop.
 
 Features shown: `trading_hours()`, `self.is_trading_hours` as the entry gate,
 `utils.filter_candles_by_hours` behind a `@cached` property, the cancel-at-close policy in
-`should_cancel_entry`, and exits that deliberately ignore the schedule.
+`should_cancel_entry`, and exits that respect the schedule.
 
 ```py
 from jesse.strategies import Strategy, cached
 import jesse.indicators as ta
 from jesse import utils
 
-# Days are always explicit; unlisted days are closed. Holidays would go in a 'closed' list.
-US_EQUITIES = {'timezone': 'America/New_York', 'hours': {'Mon-Fri': '09:30-16:00'}}
+# NSE trading hours. Days are always explicit; unlisted days are closed. Holidays would go in a 'closed' list.
+NSE_HOURS = {'timezone': 'Asia/Kolkata', 'hours': {'Mon-Fri': '09:15-15:30'}}
 
 
 class SessionBreakout(Strategy):
     def trading_hours(self):
         # Same schedule in backtest and live so the indicator history matches in both.
-        return US_EQUITIES
+        return NSE_HOURS
 
     @property
     @cached
@@ -1079,7 +1032,7 @@ class SessionBreakout(Strategy):
         return False
 
     def should_cancel_entry(self) -> bool:
-        # An entry that did not fill by the close is cancelled, not left working overnight
+        # An entry that did not fill by the close is cancelled
         return not self.is_trading_hours
 
     def go_long(self):
@@ -1095,8 +1048,7 @@ class SessionBreakout(Strategy):
             self.take_profit = self.position.qty, self.position.entry_price + 3 * self.atr
 
     def update_position(self):
-        # Runs on every candle, day or night: the exchange never closes, so the stop
-        # trails the live price. Do NOT gate this with is_trading_hours.
+        # Runs on every trading day; the stop is managed by NSE hours.
         if self.is_long:
             self.stop_loss = self.position.qty, max(self.average_stop_loss, self.price - 2 * self.atr)
 ```

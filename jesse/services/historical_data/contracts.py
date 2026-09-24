@@ -151,7 +151,6 @@ class SymbolCatalogEntry:
 
 @dataclass(frozen=True, slots=True)
 class ProviderCapabilities:
-    credential_validation: bool = False
     ticker_search: bool = False
     native_timeframes: tuple[str, ...] = ('1m',)
     adjustment_modes: tuple[AdjustmentMode, ...] = ()

@@ -97,12 +97,10 @@ def optimize(
 
         {
             'exchange': {
-                'name': 'Binance Perpetual Futures',
+                'name': 'NSE',
                 'balance': 10_000,
                 'fee': 0.0007,
-                'type': 'futures',
-                'futures_leverage': 10,
-                'futures_leverage_mode': 'cross',
+                'type': 'spot',
             },
             'warm_up_candles': 210,
         }

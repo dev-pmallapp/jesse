@@ -132,7 +132,7 @@ def register_config_tools(mcp):
             >>> config = get_config()
             >>> if config["status"] == "success":
             ...     backtest_settings = config["config"]["data"]["backtest"]
-            ...     fee_rate = backtest_settings["exchanges"]["Binance Spot"]["fee"]
+            ...     fee_rate = backtest_settings["exchanges"]["NSE"]["fee"]
             ...     print(f"Current fee rate: {fee_rate}")
 
             >>> # Access specific nested values
@@ -228,7 +228,7 @@ def register_config_tools(mcp):
             >>>
             >>> # Modify backtest settings
             >>> config_data["data"]["backtest"]["warm_up_candles"] = 300
-            >>> config_data["data"]["backtest"]["exchanges"]["Binance Spot"]["fee"] = 0.001
+            >>> config_data["data"]["backtest"]["exchanges"]["NSE"]["fee"] = 0.001
             >>>
             >>> # Save changes
             >>> result = update_config(json.dumps(config_data))
@@ -325,9 +325,8 @@ def register_config_tools(mcp):
             >>> bt_config = get_backtest_config()
             >>> if bt_config["status"] == "success":
             ...     warmup = bt_config["config"]["warm_up_candles"]
-            ...     fee = bt_config["config"]["exchanges"]["Binance Spot"]["fee"]
-            ...     leverage = bt_config["config"]["exchanges"]["Binance Futures"]["futures_leverage"]
-            ...     print(f"Warmup: {warmup} candles, Fee: {fee}, Leverage: {leverage}x")
+            ...     fee = bt_config["config"]["exchanges"]["NSE"]["fee"]
+            ...     print(f"Warmup: {warmup} candles, Fee: {fee}")
 
             >>> # Check logging settings
             >>> logging = bt_config["config"]["logging"]
@@ -415,8 +414,8 @@ def register_config_tools(mcp):
             >>> # Get live trading configuration
             >>> live_config = get_live_config()
             >>> if live_config["status"] == "success":
-            ...     live_balance = live_config["config"]["exchanges"]["Binance Spot"]["balance"]
-            ...     live_fee = live_config["config"]["exchanges"]["Binance Spot"]["fee"]
+            ...     live_balance = live_config["config"]["exchanges"]["NSE"]["balance"]
+            ...     live_fee = live_config["config"]["exchanges"]["NSE"]["fee"]
             ...     print(f"Live balance: ${live_balance}, Fee: {live_fee}")
 
             >>> # Check if live config exists

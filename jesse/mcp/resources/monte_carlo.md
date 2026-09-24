@@ -118,7 +118,7 @@ answer that — point them to the candles MC results.
 
 Stages a draft you can then run.
 
-- `exchange` (default `"Binance Perpetual Futures"`)
+- `exchange` (default `"NSE"`)
 - `routes` — JSON string array of route objects
 - `data_routes` — JSON string array (default `"[]"`)
 - `start_date`, `finish_date` — `YYYY-MM-DD`
@@ -289,11 +289,11 @@ Delete old sessions. If `days_old` is omitted, deletes **all** sessions.
 ```python
 # 1. Stage the simulation (candles-only, 200 scenarios is the default)
 draft = create_monte_carlo_draft(
-    exchange="Binance Perpetual Futures",
-    routes='[{"exchange":"Binance Perpetual Futures","strategy":"MyStrategy","symbol":"BTC-USDT","timeframe":"4h"}]',
+    exchange="NSE",
+    routes='[{"exchange":"NSE","strategy":"MyStrategy","symbol":"RELIANCE-INR","timeframe":"1D"}]',
     start_date="2023-01-01",
     finish_date="2024-01-01",
-    hypothesis="MyStrategy is robust across resampled BTC price paths.",
+    hypothesis="MyStrategy is robust across resampled RELIANCE price paths.",
 )
 sid = draft["session_id"]
 

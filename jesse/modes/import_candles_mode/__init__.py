@@ -1,10 +1,8 @@
 import json
-import math
 import time
-from typing import Dict, List, Any, Union
+from typing import Dict, List
 
 import arrow
-import pydash
 
 import jesse.helpers as jh
 from jesse.exceptions import CandleNotFoundInExchange
@@ -13,7 +11,6 @@ from jesse.modes.import_candles_mode.drivers import (
     build_historical_provider_registry,
     historical_provider_names,
 )
-from jesse.modes.import_candles_mode.drivers.interface import CandleExchange
 from jesse.config import config
 from jesse.services.failure import register_custom_exception_handler
 from jesse.services.redis import sync_publish, is_process_active, sync_redis
@@ -26,10 +23,6 @@ from jesse.services.historical_data import (
 )
 from jesse.services.historical_data.errors import ProviderPaginationError
 from jesse.repositories import candle_repository
-
-
-# Retained only for the inactive legacy fill helper; the shared importer never synthesizes gaps.
-MAX_MISSING_EDGE_MINUTES = 50
 
 
 def candle_import_progress_key(client_id: str) -> str:
@@ -510,222 +503,6 @@ def _run(
         from jesse.services.db import database
         database.close_connection()
         return success_text
-
-
-def _get_candles_from_backup_exchange(exchange: str, backup_driver: CandleExchange, symbol: str, start_timestamp: int,
-                                      end_timestamp: int) -> List[Dict[str, Union[str, Any]]]:
-    timeframe = '1m'
-    total_candles = []
-    # try fetching from database first
-    backup_candles = Candle.select(
-        Candle.timestamp, Candle.open, Candle.close, Candle.high, Candle.low,
-        Candle.volume
-    ).where(
-        Candle.exchange == backup_driver.name,
-        Candle.symbol == symbol,
-        Candle.timeframe == timeframe,
-        Candle.timestamp.between(start_timestamp, end_timestamp)
-    ).order_by(Candle.timestamp.asc()).tuples()
-    already_exists = len(backup_candles) == (end_timestamp - start_timestamp) / 60_000 + 1
-    if already_exists:
-        # loop through them and set new ID and exchange
-        for c in backup_candles:
-            total_candles.append({
-                'id': jh.generate_unique_id(),
-                'exchange': exchange,
-                'symbol': symbol,
-                'timeframe': timeframe,
-                'timestamp': c[0],
-                'open': c[1],
-                'close': c[2],
-                'high': c[3],
-                'low': c[4],
-                'volume': c[5]
-            })
-
-        return total_candles
-
-    # try fetching from market now
-    days_count = jh.date_diff_in_days(jh.timestamp_to_arrow(start_timestamp), jh.timestamp_to_arrow(end_timestamp))
-    # make sure it's rounded up so that we import maybe more candles, but not less
-    days_count = max(days_count, 1)
-    if type(days_count) is float and not days_count.is_integer():
-        days_count = math.ceil(days_count)
-    candles_count = days_count * 1440
-    start_date = jh.timestamp_to_arrow(start_timestamp).floor('day')
-    for _ in range(candles_count):
-        temp_start_timestamp = start_date.int_timestamp * 1000
-        temp_end_timestamp = temp_start_timestamp + (backup_driver.count - 1) * 60000
-
-        # to make sure it won't try to import candles from the future! LOL
-        if temp_start_timestamp > jh.now_to_timestamp():
-            break
-
-        # prevent duplicates
-        count = Candle.select().where(
-            Candle.exchange == backup_driver.name,
-            Candle.symbol == symbol,
-            Candle.timeframe == timeframe,
-            Candle.timestamp.between(temp_start_timestamp, temp_end_timestamp)
-        ).count()
-        already_exists = count == backup_driver.count
-
-        if not already_exists:
-            # it's today's candles if temp_end_timestamp < now
-            if temp_end_timestamp > jh.now_to_timestamp():
-                temp_end_timestamp = arrow.utcnow().floor('minute').int_timestamp * 1000 - 60000
-
-            # fetch from market
-            candles = _fetch_normalized_candles(
-                backup_driver, symbol, temp_start_timestamp, temp_end_timestamp, timeframe
-            )
-
-            if not len(candles):
-                raise CandleNotFoundInExchange(
-                    f'No candles exists in the market for this day: {jh.timestamp_to_time(temp_start_timestamp)[:10]} \n'
-                    'Try another start_date'
-                )
-
-            # fill absent candles (if there's any)
-            candles = _fill_absent_candles(candles, temp_start_timestamp, temp_end_timestamp)
-
-            # store in the database
-            store_candles_list(candles)
-
-        # add as much as driver's count to the temp_start_time
-        start_date = start_date.shift(minutes=backup_driver.count)
-
-        # sleep so that the exchange won't get angry at us
-        if not already_exists:
-            time.sleep(backup_driver.sleep_time)
-
-    # now try fetching from database again. Why? because we might have fetched more
-    # than what's needed, but we only want as much was requested. Don't worry, the next
-    # request will probably fetch from database and there won't be any waste!
-    backup_candles = Candle.select(
-        Candle.timestamp, Candle.open, Candle.close, Candle.high, Candle.low,
-        Candle.volume
-    ).where(
-        Candle.exchange == backup_driver.name,
-        Candle.symbol == symbol,
-        Candle.timeframe == timeframe,
-        Candle.timestamp.between(start_timestamp, end_timestamp)
-    ).order_by(Candle.timestamp.asc()).tuples()
-    already_exists = len(backup_candles) == (end_timestamp - start_timestamp) / 60_000 + 1
-    if already_exists:
-        # loop through them and set new ID and exchange
-        for c in backup_candles:
-            total_candles.append({
-                'id': jh.generate_unique_id(),
-                'exchange': exchange,
-                'symbol': symbol,
-                'timeframe': timeframe,
-                'timestamp': c[0],
-                'open': c[1],
-                'close': c[2],
-                'high': c[3],
-                'low': c[4],
-                'volume': c[5]
-            })
-
-        return total_candles
-
-
-def _fill_absent_candles(temp_candles: List[Dict[str, Union[str, Any]]], start_timestamp: int, end_timestamp: int) -> \
-        List[Dict[str, Union[str, Any]]]:
-    if not temp_candles:
-        raise CandleNotFoundInExchange(
-            f'No candles exists in the market for this day: {jh.timestamp_to_time(start_timestamp)[:10]} \n'
-            'Try another start_date'
-        )
-
-    latest_timestamp = max(int(c['timestamp']) for c in temp_candles)
-    trailing_gap_minutes = max(0, int((end_timestamp - latest_timestamp) / 60_000))
-    if trailing_gap_minutes > MAX_MISSING_EDGE_MINUTES:
-        raise CandleNotFoundInExchange(
-            f'Provider returned an incomplete trailing range for {temp_candles[0]["symbol"]} on '
-            f'{temp_candles[0]["exchange"]}: {trailing_gap_minutes} minutes are missing after the '
-            'last real candle. Refusing to generate a large synthetic candle tail.'
-        )
-
-    symbol = temp_candles[0]['symbol']
-    exchange = temp_candles[0]['exchange']
-    candles = []
-    first_candle = temp_candles[0]
-    started = False
-    loop_length = ((end_timestamp - start_timestamp) / 60000) + 1
-
-    for _ in range(int(loop_length)):
-        candle_for_timestamp = pydash.find(
-            temp_candles, lambda c: c['timestamp'] == start_timestamp)
-
-        if candle_for_timestamp is None:
-            if started:
-                last_close = candles[-1]['close']
-                candles.append({
-                    'id': jh.generate_unique_id(),
-                    'exchange': exchange,
-                    'symbol': symbol,
-                    'timeframe': '1m',
-                    'timestamp': start_timestamp,
-                    'open': last_close,
-                    'high': last_close,
-                    'low': last_close,
-                    'close': last_close,
-                    'volume': 0
-                })
-            else:
-                candles.append({
-                    'id': jh.generate_unique_id(),
-                    'exchange': exchange,
-                    'symbol': symbol,
-                    'timeframe': '1m',
-                    'timestamp': start_timestamp,
-                    'open': first_candle['open'],
-                    'high': first_candle['open'],
-                    'low': first_candle['open'],
-                    'close': first_candle['open'],
-                    'volume': 0
-                })
-        # candle is present
-        else:
-            started = True
-            candles.append(candle_for_timestamp)
-
-        start_timestamp += 60000
-    return candles
-
-
-def _fetch_normalized_candles(
-    provider: CandleExchange,
-    symbol: str,
-    start_timestamp: int,
-    end_timestamp: int,
-    timeframe: str,
-) -> List[Dict[str, Union[str, Any]]]:
-    """Fetch an inclusive storage range through the provider's half-open normalized contract."""
-    interval = jh.timeframe_to_one_minutes(timeframe) * 60_000
-    request = HistoricalCandleRequest(
-        symbol=symbol,
-        timeframe=timeframe,
-        requested_range=HistoricalCandleRange(start_timestamp, end_timestamp + interval),
-    )
-    batch = provider.fetch_candles(request)
-    return [
-        {
-            'id': jh.generate_unique_id(),
-            'exchange': provider.name,
-            'symbol': symbol,
-            'timeframe': timeframe,
-            'timestamp': candle.timestamp,
-            'open': candle.open,
-            'close': candle.close,
-            'high': candle.high,
-            'low': candle.low,
-            'volume': candle.volume,
-        }
-        for candle in batch.candles
-    ]
 
 
 def store_candles_list(candles: List[Dict]) -> None:

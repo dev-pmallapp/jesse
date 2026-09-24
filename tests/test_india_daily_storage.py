@@ -795,9 +795,11 @@ def test_1w_bucket_is_epoch_thursday_anchored_not_monday_of_the_trading_week():
 
 
 def test_daily_bars_only_allowed_timeframes_matches_the_bucket_alignment_evidence_above():
-    # Only 1D is allowed - see validators.py's DAILY_BARS_ONLY_ALLOWED_TIMEFRAMES comment
-    # and the two aggregation tests directly above for the bucket-math evidence why.
-    assert validators.DAILY_BARS_ONLY_ALLOWED_TIMEFRAMES == ('1D',)
+    # 1D and 1W are allowed (1W via Monday-aligned bucketing - see
+    # jh.timeframe_bucket_start/story #67); 3D stays forbidden. See
+    # validators.py's DAILY_BARS_ONLY_ALLOWED_TIMEFRAMES comment and the
+    # aggregation tests directly above for the bucket-math evidence why.
+    assert validators.DAILY_BARS_ONLY_ALLOWED_TIMEFRAMES == ('1D', '1W')
 
 
 # --------------------------------------------------------------------------------------
@@ -820,7 +822,7 @@ def daily_bars_only_exchange_info(monkeypatch):
     return 'NSE'
 
 
-@pytest.mark.parametrize('timeframe', ['1m', '1h', '4h', '3D', '1W'])
+@pytest.mark.parametrize('timeframe', ['1m', '1h', '4h', '3D'])
 def test_validate_routes_rejects_disallowed_timeframes_on_a_daily_bars_only_exchange(
     daily_bars_only_exchange_info, timeframe,
 ):
@@ -845,6 +847,14 @@ def test_validate_routes_rejects_disallowed_timeframe_on_a_data_route_too(daily_
 def test_validate_routes_accepts_1d_on_a_daily_bars_only_exchange(daily_bars_only_exchange_info):
     exchange = daily_bars_only_exchange_info
     router = _FakeRouter([Route(exchange, 'RELIANCE-INR', '1D', 'SomeStrategy')])
+
+    validators.validate_routes(router)  # must not raise
+
+
+def test_validate_routes_accepts_1w_on_a_daily_bars_only_exchange(daily_bars_only_exchange_info):
+    # Story #67: 1W is now Monday-aligned and accepted, same as 1D.
+    exchange = daily_bars_only_exchange_info
+    router = _FakeRouter([Route(exchange, 'RELIANCE-INR', '1W', 'SomeStrategy')])
 
     validators.validate_routes(router)  # must not raise
 

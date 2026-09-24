@@ -64,16 +64,14 @@ def rule_significance_test(
             {
                 'starting_balance': 10_000,
                 'fee': 0.001,
-                'type': 'futures',           # or 'spot'
-                'futures_leverage': 3,
-                'futures_leverage_mode': 'cross',
-                'exchange': 'Binance',
+                'type': 'spot',           # or 'futures'
+                'exchange': 'NSE',
                 'warm_up_candles': 210,
             }
     routes : list[dict]
         Exactly one trading route.  Example:
-            [{'exchange': 'Binance', 'symbol': 'BTC-USDT',
-              'timeframe': '4h', 'strategy': 'MyStrategy'}]
+            [{'exchange': 'NSE', 'symbol': 'RELIANCE-INR',
+              'timeframe': '1D', 'strategy': 'MyStrategy'}]
     data_routes : list[dict]
         Any number of data-only routes (no strategy key required).
     candles : dict

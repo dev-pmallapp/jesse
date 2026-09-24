@@ -11,7 +11,6 @@ from typing import Any
 
 from redis.exceptions import LockError
 
-from jesse.enums import exchanges
 from jesse.services.historical_data.contracts import SymbolCatalogEntry
 from jesse.services.redis import sync_redis
 
@@ -74,10 +73,6 @@ def load_symbol_catalog(exchange: str) -> dict[str, Any]:
     historical-data errors; a catalog still being loaded elsewhere raises
     SymbolCatalogLoadingError.
     """
-    if exchange == exchanges.CUSTOM_DATA:
-        from jesse.repositories.candle_repository import get_stored_symbols
-        return {'data': get_stored_symbols(exchange), 'details': {}}
-
     cache_key = _cache_key(exchange)
     cached_result = sync_redis.get(cache_key)
     if cached_result is not None:

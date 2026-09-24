@@ -33,8 +33,8 @@ def register_significance_test_tools(mcp):
 
     @mcp.tool()
     def create_significance_test_draft(
-        exchange: str = "Binance Perpetual Futures",
-        routes: str = '[{"exchange": "Binance Perpetual Futures", "strategy": "ExampleStrategy", "symbol": "BTC-USDT", "timeframe": "4h"}]',
+        exchange: str = "NSE",
+        routes: str = '[{"exchange": "NSE", "strategy": "ExampleStrategy", "symbol": "RELIANCE-INR", "timeframe": "1D"}]',
         data_routes: str = '[]',
         start_date: str = "2021-01-01",
         finish_date: str = "2022-01-01",
@@ -64,7 +64,7 @@ def register_significance_test_tools(mcp):
             - 2000+ simulations are recommended for stable p-values.
 
         Parameters:
-            exchange: Exchange name (default "Binance Perpetual Futures").
+            exchange: Exchange name (default "NSE").
             routes: JSON string array with EXACTLY one route object:
                 [{"exchange": "...", "strategy": "...", "symbol": "...", "timeframe": "..."}]
             data_routes: JSON string array (default "[]").
