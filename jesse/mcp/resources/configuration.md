@@ -68,12 +68,15 @@ Retrieves optimization configuration settings.
         "order_cancellation": true
     },
     "exchanges": {
-        "Exchange Name": {
-        "balance": 10000,
-        "fee": 0.0004,
-        "type": "futures",
-        "futures_leverage": 1,
-        "futures_leverage_mode": "cross"
+        "NSE": {
+        "balance": 100000,
+        "fee": 0.0002,
+        "type": "spot"
+        },
+        "BSE": {
+        "balance": 100000,
+        "fee": 0.0002,
+        "type": "spot"
         }
     }
     }
@@ -101,11 +104,9 @@ Retrieves optimization configuration settings.
     "warm_up_candles": 210,
     "trials": 200,
     "exchange": {
-        "futures_leverage": 5,
-        "fee": 0.0006,
-        "futures_leverage_mode": "cross",
-        "balance": 10000,
-        "type": "futures"
+        "fee": 0.0002,
+        "balance": 100000,
+        "type": "spot"
     },
     "objective_function": "sharpe"
     }
@@ -129,9 +130,9 @@ new_config = {
         "backtest": {
             "warm_up_candles": 300,
             "exchanges": {
-                "Binance Spot": {
-                    "balance": 50000,
-                    "fee": 0.001,
+                "NSE": {
+                    "balance": 500000,
+                    "fee": 0.0002,
                     "type": "spot"
                 }
             }

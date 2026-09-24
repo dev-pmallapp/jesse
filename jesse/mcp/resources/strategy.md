@@ -230,7 +230,7 @@ Access these as `self.<name>`. Prices come from the **current (closed) candle**.
 |---|---|---|
 | `available_margin` | float | Free margin = balance − margin used by open positions/orders. **Most recommended for sizing.** |
 | `leveraged_available_margin` | float | `leverage * available_margin`. |
-| `balance` | float | Wallet balance (USDT on futures). Updates after a position closes. |
+| `balance` | float | Wallet balance (INR). Updates after a position closes. |
 | `portfolio_value` | float | Total portfolio value (open + closed); updates continuously. |
 | `daily_balances` | list | Daily portfolio values (used for metrics like Sharpe). |
 | `fee_rate` | float | Exchange fee rate, e.g. `0.001` for 0.1%. Pass to sizing helpers. |
@@ -325,14 +325,14 @@ import jesse.indicators as ta
 
 # Current value on the trading route's candles:
 current_sma = ta.sma(self.candles, 8)
-# returns a single float on the price scale (e.g. ~29543.21), NOT the period
+# returns a single float on the price scale (e.g. ~2543.21), NOT the period
 
 # Sequential values (a numpy array of the indicator over all candles):
 sma_series = ta.sma(self.candles, 8, sequential=True)
 # -> [1.2345, 1.2346, ...]
 
 # On candles from another exchange/symbol/timeframe:
-ta.sma(self.get_candles('Binance', 'BTC-USDT', '4h'), 8)
+ta.sma(self.get_candles('NSE', 'RELIANCE-INR', '1W'), 8)
 ```
 
 Indicators that return multiple lines come back as **named tuples** — both index and attribute access work:
@@ -351,16 +351,16 @@ Use `crossed(series1, series2, direction=...)` (from `jesse.utils`) for crossove
 
 ## Multi-Timeframe
 
-Higher-timeframe candle arrays like `candles_6h` are **not auto-provided**. Build them yourself with `self.get_candles(...)`, typically as a `@property`:
+Higher-timeframe candle arrays like `candles_1w` are **not auto-provided**. Build them yourself with `self.get_candles(...)`, typically as a `@property`:
 
 ```python
 @property
-def candles_6h(self):
-    return self.get_candles(self.exchange, self.symbol, '6h')
+def candles_1w(self):
+    return self.get_candles(self.exchange, self.symbol, '1W')
 
 @property
 def big_trend(self):
-    k, d = ta.srsi(self.get_candles(self.exchange, self.symbol, '1D'))
+    k, d = ta.srsi(self.get_candles(self.exchange, self.symbol, '1W'))
     return 1 if k > d else -1 if k < d else 0
 ```
 
@@ -368,10 +368,7 @@ Lookahead bias is handled internally even across timeframes: the closing price o
 
 ## Trading Hours (market sessions)
 
-Use this whenever the user wants entries limited to a market's hours, days or session, wants to
-skip weekends/holidays, or trades a **stock-linked instrument on a 24/7 crypto exchange**. The
-typical reason: stock history used for backtesting has gaps (nights, weekends, holidays), while
-the 24/7 exchange feed does not, so the same indicator would see two different histories.
+Use this when the user wants entries limited to NSE's regular trading hours. NSE operates on weekdays (Monday–Friday) during specific hours and is closed on weekends and holidays.
 
 Three building blocks. **The engine enforces nothing**; you place them yourself:
 
@@ -383,7 +380,7 @@ from jesse import utils
 def trading_hours(self):
     # dict, or None for "no schedule" (then is_trading_hours is always True and the
     # filter returns its input unchanged)
-    return {'timezone': 'America/New_York', 'hours': {'Mon-Fri': '09:30-16:00'}}
+    return {'timezone': 'Asia/Kolkata', 'hours': {'Mon-Fri': '09:15-15:30'}}
 
 @property
 @cached
@@ -400,19 +397,19 @@ Schedule dict keys:
 
 | Key | Required | Value |
 |---|---|---|
-| `timezone` | yes | IANA name (`'America/New_York'`, `'Asia/Tokyo'`, `'UTC'`). DST is handled. |
+| `timezone` | yes | IANA name (`'Asia/Kolkata'` for NSE, `'UTC'`, `'America/New_York'`, `'Asia/Tokyo'`, etc.). DST is handled. |
 | `hours` | yes | dict: day spec → `'HH:MM-HH:MM'` or a list of windows. Day specs: `'Mon-Fri'`, `'Sun-Thu'`, `'Mon,Wed,Fri'`, `'Sun'`. **Unlisted days are closed.** |
 | `closed` | no | list of ISO dates (`'2026-11-26'`) treated as closed (holidays). |
 | `overrides` | no | dict: ISO date → window(s) for that one day (early closes). |
 
 Windows are half-open (`open <= t < close`), an end earlier than the start wraps past midnight,
-and `'00:00-24:00'` is a whole day. More schedules:
+and `'00:00-24:00'` is a whole day. NSE schedule example:
 
 ```python
-{'timezone': 'Asia/Riyadh', 'hours': {'Sun-Thu': '10:00-15:00'}}                    # Tadawul
-{'timezone': 'Asia/Tokyo', 'hours': {'Mon-Fri': ['09:00-11:30', '12:30-15:30']}}     # lunch break
-{'timezone': 'UTC', 'hours': {'Mon-Fri': '00:00-24:00'}}                            # crypto, skip weekends
+{'timezone': 'Asia/Kolkata', 'hours': {'Mon-Fri': '09:15-15:30'}}  # NSE regular trading hours
 ```
+
+For the full NSE/BSE calendar (holidays 2011-2026 and special sessions such as Muhurat and budget Saturdays), return `nse_trading_hours()` / `bse_trading_hours()` from `jesse.markets.india` instead of writing the dict by hand.
 
 Rules:
 
@@ -510,7 +507,7 @@ def dna(self):
 - **Routes**: optimize uses exactly **ONE trading route** (you may add multiple extra/data routes).
 - **Period**: prefer longer periods to avoid overfitting; avoid very short windows (e.g. 3 days).
 - **Profitability**: the strategy should already be profitable — optimization improves a working strategy, it does not fix a losing one.
-- **Optimal trades**: set the target number based on your timeframe; choose higher rather than lower (e.g. for a 6h timeframe doing 30–60 trades/year, set 60+).
+- **Optimal trades**: set the target number based on your timeframe; choose higher rather than lower (e.g. for daily timeframe doing 50–100 trades/year, set 100+).
 - **When to stop**: no need to wait for 100% — stop once you have a few good DNAs and validate them on a separate out-of-sample period.
 - **Before optimizing**: run the strategy through a backtest one more time to confirm there are no errors.
 

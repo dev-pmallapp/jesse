@@ -3,6 +3,8 @@
 ## Overview
 The jesse repository is the **core open-source framework** of the Jesse trading system. It contains the main Python codebase for backtesting trading strategies, importing historical data from crypto exchanges, running optimizations, and providing the API backend for the dashboard. It glues together the other repositories and makes them work together.
 
+**Note: This fork is NSE/BSE-only.** All crypto exchanges (Binance, Bybit, Coinbase, etc.), Massive and Custom Data sources were removed. The framework now supports only NSE and BSE for spot equity backtesting on daily (`1D`) or weekly (`1W`) bars, with symbols like `RELIANCE-INR`, `TCS-INR`, `INFY-INR`. The `Sandbox` internal test exchange remains for engine tests only and should not be advertised to users.
+
 ## Skills
 
 This repo stores shared **Agent Skills** in `.claude/skills/` — focused, task-specific playbooks used by Claude Code and Codex. Codex also discovers them through the repository-relative `.agents/skills` symlink.

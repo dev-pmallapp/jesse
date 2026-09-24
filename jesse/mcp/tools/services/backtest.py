@@ -198,7 +198,7 @@ def _update_backtest_notes(
 
 def create_backtest_draft_service(
     exchange: str = "NSE",
-    routes: str = '[{"exchange": "NSE", "strategy": "ExampleStrategy", "symbol": "RELIANCE-INR", "timeframe": "4h"}]',
+    routes: str = '[{"exchange": "NSE", "strategy": "ExampleStrategy", "symbol": "RELIANCE-INR", "timeframe": "1D"}]',
     data_routes: str = '[]',
     start_date: str = "2024-01-01",
     finish_date: str = "2024-03-01",
@@ -274,12 +274,12 @@ def create_backtest_draft_service(
             first_route = routes_list[0]
             selected_route = {
                 'symbol': first_route.get('symbol', 'RELIANCE-INR'),
-                'timeframe': first_route.get('timeframe', '4h'),
+                'timeframe': first_route.get('timeframe', '1D'),
                 'strategy': first_route.get('strategy', 'ExampleStrategy')
             }
         else:
             # Fallback to defaults if no routes provided
-            selected_route = {"symbol": "RELIANCE-INR", "timeframe": "4h", "strategy": "ExampleStrategy"}
+            selected_route = {"symbol": "RELIANCE-INR", "timeframe": "1D", "strategy": "ExampleStrategy"}
 
         run_config = load_session_run_config('backtest', exchange)
 

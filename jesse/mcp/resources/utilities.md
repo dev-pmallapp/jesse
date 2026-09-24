@@ -185,9 +185,9 @@ Returns the anchor timeframe for multi-timeframe strategies.
 
 **Example:**
 ```python
-# For 5m timeframe, returns "30m"
-# For 1h timeframe, returns "4h"
-anchor = utils.anchor_timeframe("5m")  # Returns "30m"
+# For 1D timeframe, returns "1W"
+# For 1W timeframe, returns "1M"
+anchor = utils.anchor_timeframe("1D")  # Returns "1W"
 ```
 
 ### TIMEFRAME_TO_ONE_MINUTES
@@ -198,9 +198,8 @@ Convert timeframe strings to minutes for calculations.
 from jesse.constants import TIMEFRAME_TO_ONE_MINUTES
 
 # Get minutes in each timeframe
-minutes_1h = TIMEFRAME_TO_ONE_MINUTES['1h']  # 60
-minutes_4h = TIMEFRAME_TO_ONE_MINUTES['4h']  # 240
 minutes_1d = TIMEFRAME_TO_ONE_MINUTES['1D']  # 1440
+minutes_1w = TIMEFRAME_TO_ONE_MINUTES['1W']  # 10080
 
 # Useful for multi-timeframe position sizing
 # Risk 2% per day regardless of timeframe

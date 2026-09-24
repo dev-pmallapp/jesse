@@ -42,7 +42,7 @@ def register_optimization_tools(mcp):
     @mcp.tool()
     def create_optimization_draft(
         exchange: str = "NSE",
-        routes: str = '[{"exchange": "NSE", "strategy": "ExampleStrategy", "symbol": "RELIANCE-INR", "timeframe": "4h"}]',
+        routes: str = '[{"exchange": "NSE", "strategy": "ExampleStrategy", "symbol": "RELIANCE-INR", "timeframe": "1D"}]',
         data_routes: str = '[]',
         training_start_date: str = "2021-01-01",
         training_finish_date: str = "2022-06-01",

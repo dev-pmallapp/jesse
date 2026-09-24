@@ -77,13 +77,11 @@ def backtest(
     {
         'starting_balance': 5_000,
         'fee': 0.005,
-        'type': 'futures',
-        'simulation_model': 'perpetual_futures',
+        'type': 'spot',
+        'simulation_model': 'spot',
         # Optional. When omitted, it defaults to the `exchange`'s registered
         # annualization (252 for NSE/BSE).
         'annualization': 252,
-        'futures_leverage': 3,
-        'futures_leverage_mode': 'cross',
         'exchange': 'NSE',
         'warm_up_candles': 0
     }

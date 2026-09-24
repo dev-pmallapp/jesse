@@ -41,7 +41,7 @@ def register_backtest_tools(mcp):
     @mcp.tool()
     def create_backtest_draft(
         exchange: str = "NSE",
-        routes: str = '[{"exchange": "NSE", "strategy": "ExampleStrategy", "symbol": "RELIANCE-INR", "timeframe": "4h"}]',
+        routes: str = '[{"exchange": "NSE", "strategy": "ExampleStrategy", "symbol": "RELIANCE-INR", "timeframe": "1D"}]',
         data_routes: str = '[]',
         start_date: str = "2024-01-01",
         finish_date: str = "2024-03-01",
@@ -108,7 +108,7 @@ def register_backtest_tools(mcp):
         Example:
             >>> draft = create_backtest_draft(
             ...     exchange="NSE",
-            ...     routes='[{"exchange": "NSE", "strategy": "MyStrategy", "symbol": "RELIANCE-INR", "timeframe": "4h"}]',
+            ...     routes='[{"exchange": "NSE", "strategy": "MyStrategy", "symbol": "RELIANCE-INR", "timeframe": "1D"}]',
             ...     start_date="2024-01-01",
             ...     finish_date="2024-12-31"
             ... )
@@ -449,7 +449,7 @@ def register_backtest_tools(mcp):
                         "exchange": "NSE",
                         "strategy": "MyStrategy",
                         "symbol": "RELIANCE-INR",
-                        "timeframe": "4h"
+                        "timeframe": "1D"
                     }
                 ],
                 "dashboard_url": "http://127.0.0.1:9000/#/backtest/uuid-string",

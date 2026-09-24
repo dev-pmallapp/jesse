@@ -448,7 +448,7 @@ def register_candles_tools(mcp):
                     {
                         "exchange": "NSE",
                         "symbol": "TCS-INR",
-                        "timeframe": "4h",
+                        "timeframe": "1D",
                         "count": 4380,
                         "from_date": "2020-01-01",
                         "to_date": "2024-12-31"

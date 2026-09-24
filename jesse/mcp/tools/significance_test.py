@@ -34,7 +34,7 @@ def register_significance_test_tools(mcp):
     @mcp.tool()
     def create_significance_test_draft(
         exchange: str = "NSE",
-        routes: str = '[{"exchange": "NSE", "strategy": "ExampleStrategy", "symbol": "RELIANCE-INR", "timeframe": "4h"}]',
+        routes: str = '[{"exchange": "NSE", "strategy": "ExampleStrategy", "symbol": "RELIANCE-INR", "timeframe": "1D"}]',
         data_routes: str = '[]',
         start_date: str = "2021-01-01",
         finish_date: str = "2022-01-01",

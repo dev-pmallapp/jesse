@@ -5,7 +5,7 @@
 Creates a new backtest session draft with specified parameters.
 
 Parameters:
-- `exchange` (optional): Exchange name (default: "Binance Perpetual Futures")
+- `exchange` (optional): Exchange name (default: "NSE")
 - `routes`: JSON string array of route configurations
 - `data_routes` (optional): JSON string array of data route configurations
 - `start_date` (optional): Backtest start date (default: "2024-01-01")
@@ -20,8 +20,8 @@ Parameters:
 Default Configuration:
 ```json
 {
-    "exchange": "Binance Perpetual Futures",
-    "routes": "[{"exchange":"Binance Perpetual Futures", "strategy": "ExampleStrategy", "symbol": "BTC-USDT",    "timeframe": "4h"}]",
+    "exchange": "NSE",
+    "routes": "[{"exchange":"NSE", "strategy": "ExampleStrategy", "symbol": "RELIANCE-INR",    "timeframe": "1D"}]",
     "data_routes": "[]",
     "start_date": "2024-01-01",
     "finish_date": "2024-03-01",
@@ -55,7 +55,7 @@ The state parameter must contain only the inner state object:
 ```json
 {
     "form": {
-    "exchange": "Binance Perpetual Futures",
+    "exchange": "NSE",
     "routes": [...],
     "start_date": "2024-01-01",
     "finish_date": "2024-03-01"
@@ -184,7 +184,7 @@ Returns: Number of deleted sessions
 ### Basic Backtest Creation
 ```python
 draft = create_backtest_draft(
-    routes='[{"exchange": "Binance Spot", "strategy": "MyStrategy", "symbol": "BTC-USDT", "timeframe": "1h"}]',
+    routes='[{"exchange": "NSE", "strategy": "MyStrategy", "symbol": "RELIANCE-INR", "timeframe": "1D"}]',
     start_date="2024-01-01",
     finish_date="2024-12-31"
 )
@@ -194,9 +194,9 @@ draft = create_backtest_draft(
 ### Configuration Override
 ```python
 draft = create_backtest_draft(
-    exchange="Binance Spot",
-    routes='[{"exchange": "Binance Spot", "strategy": "MyStrategy", "symbol": "ETH-USDT", "timeframe": "4h"}]',
-    data_routes='[{"exchange": "Binance Spot", "symbol": "ETH-USDT", "timeframe": "4h"}]',
+    exchange="NSE",
+    routes='[{"exchange": "NSE", "strategy": "MyStrategy", "symbol": "TCS-INR", "timeframe": "1W"}]',
+    data_routes='[{"exchange": "NSE", "symbol": "TCS-INR", "timeframe": "1W"}]',
     debug_mode=true
 )
 ```
@@ -204,8 +204,8 @@ draft = create_backtest_draft(
 ### Multiple Strategies
 ```python
 routes = '''[
-    {"exchange": "Binance Spot", "strategy": "Strategy1", "symbol": "BTC-USDT", "timeframe": "1h"},
-    {"exchange": "Binance Spot", "strategy": "Strategy2", "symbol": "ETH-USDT", "timeframe": "4h"}
+    {"exchange": "NSE", "strategy": "Strategy1", "symbol": "RELIANCE-INR", "timeframe": "1D"},
+    {"exchange": "BSE", "strategy": "Strategy2", "symbol": "INFY-INR", "timeframe": "1D"}
 ]'''
 
 draft = create_backtest_draft(routes=routes)
@@ -218,7 +218,7 @@ Appending Routes:
 session_response = get_backtest_session("550e8400-e29b-41d4-a716-446655440000")
 session = session_response.data.session
 current_state = session.state.state
-new_route = {"exchange": "Binance Spot", "strategy": "MyStrategy", "symbol": "DOGE-USDT", "timeframe": "1h"}
+new_route = {"exchange": "NSE", "strategy": "MyStrategy", "symbol": "NIFTYBEES-INR", "timeframe": "1D"}
 updated_routes = current_state.form.routes + [new_route]
 merged_state = current_state.copy()
 merged_state.form.routes = updated_routes
@@ -247,38 +247,32 @@ session_details = get_backtest_session("550e8400-e29b-41d4-a716-446655440000")
 
 ## Supported Exchanges
 
-Jesse supports the following exchanges for backtesting and live trading:
+This fork supports the following exchanges for backtesting:
 
 ### Spot Exchanges
-- `"Binance Spot"` - Most popular, reliable data
-- `"Bybit Spot"` - Alternative data source
-- `"Coinbase Spot"` - Low fees (0.03%)
-- `"Bitfinex Spot"` - Additional option
+- `"NSE"` - National Stock Exchange of India (primary)
+- `"BSE"` - Bombay Stock Exchange (secondary)
 
-### Futures Exchanges
-- `"Binance Perpetual Futures"` - High leverage (up to 5x)
-- `"Bybit USDT Perpetual"` - Conservative leverage (up to 2x)
-- `"Bybit USDC Perpetual"` - USDC settlement
-- `"Gate USDT Perpetual"` - Additional futures option
+**Note:** Only daily (`1D`) and weekly (`1W`) bars are supported for NSE and BSE. No live trading on crypto or Indian stock exchanges is available in this fork.
 
 ## Route Configuration Schema
 
 Route Object:
 ```json
 {
-    "exchange": "string (exchange name - see supported exchanges above)",
+    "exchange": "string (exchange name - NSE or BSE)",
     "strategy": "string (strategy class name)",
-    "symbol": "string (trading pair)",
-    "timeframe": "string (1m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1D, 3D, 1W, 1M)"
+    "symbol": "string (stock symbol, e.g., RELIANCE-INR, TCS-INR)",
+    "timeframe": "string (1D for daily, 1W for weekly)"
 }
 ```
 
 Data Route Object:
 ```json
 {
-    "exchange": "string (exchange name - see supported exchanges above)",
-    "symbol": "string (trading pair)",
-    "timeframe": "string (timeframe)"
+    "exchange": "string (exchange name - NSE or BSE)",
+    "symbol": "string (stock symbol, e.g., RELIANCE-INR)",
+    "timeframe": "string (1D or 1W)"
 }
 ```
 
@@ -295,8 +289,8 @@ Common error scenarios and recovery:
 **Problematic Configuration**:
 ```json
 "routes": [
-    {"exchange": "Binance Spot", "strategy": "MyStrategy", "symbol": "BTC-USDT", "timeframe": "1h"},
-    {"exchange": "Binance Spot", "strategy": "MyStrategy", "symbol": "BTC-USDT", "timeframe": "4h"}
+    {"exchange": "NSE", "strategy": "MyStrategy", "symbol": "RELIANCE-INR", "timeframe": "1D"},
+    {"exchange": "NSE", "strategy": "MyStrategy", "symbol": "RELIANCE-INR", "timeframe": "1W"}
 ]
 ```
 
@@ -304,14 +298,14 @@ Common error scenarios and recovery:
 
 **Correct Approach**:
 ```python
-# Backtest 1: 1h timeframe
+# Backtest 1: daily timeframe
 draft1 = create_backtest_draft(
-    routes='[{"exchange": "Binance Spot", "strategy": "MyStrategy", "symbol": "BTC-USDT", "timeframe": "1h"}]'
+    routes='[{"exchange": "NSE", "strategy": "MyStrategy", "symbol": "RELIANCE-INR", "timeframe": "1D"}]'
 )
 
-# Backtest 2: 4h timeframe
+# Backtest 2: weekly timeframe
 draft2 = create_backtest_draft(
-    routes='[{"exchange": "Binance Spot", "strategy": "MyStrategy", "symbol": "BTC-USDT", "timeframe": "4h"}]'
+    routes='[{"exchange": "NSE", "strategy": "MyStrategy", "symbol": "RELIANCE-INR", "timeframe": "1W"}]'
 )
 ```
 
@@ -380,11 +374,11 @@ When developing and iterating on trading strategies, session management can sign
 **Example Workflow:**
 ```python
 # Iteration 1: Create new session with initial strategy
-draft1 = create_backtest_draft(routes='[{"exchange": "Binance Spot", "strategy": "MyStrategy", "symbol": "BTC-USDT", "timeframe": "4h"}]')
+draft1 = create_backtest_draft(routes='[{"exchange": "NSE", "strategy": "MyStrategy", "symbol": "RELIANCE-INR", "timeframe": "1D"}]')
 run_backtest(draft1.backtest_id, config)
 
 # Iteration 2: Create NEW session with modified strategy
-draft2 = create_backtest_draft(routes='[{"exchange": "Binance Spot", "strategy": "MyStrategy", "symbol": "BTC-USDT", "timeframe": "4h"}]')
+draft2 = create_backtest_draft(routes='[{"exchange": "NSE", "strategy": "MyStrategy", "symbol": "RELIANCE-INR", "timeframe": "1D"}]')
 run_backtest(draft2.backtest_id, config)
 
 # Compare results across sessions
@@ -420,10 +414,10 @@ handles lookahead bias across timeframes internally, so a higher-timeframe
 candle's close is never future data.
 ```
 # CORRECT - read a higher timeframe inside the same strategy
-candles_4h = self.get_candles(self.exchange, self.symbol, '4h')
-trend_ema = ta.ema(candles_4h, 50)
+candles_1w = self.get_candles(self.exchange, self.symbol, '1W')
+trend_ema = ta.ema(candles_1w, 50)
 ```
-Typically expose it as a @property (e.g. candles_4h). See the Multi-Timeframe
+Typically expose it as a @property (e.g. candles_1w). See the Multi-Timeframe
 section of jesse://strategy for the canonical pattern.
 
 === 2. Balance vs Capital Confusion ===
@@ -475,25 +469,22 @@ def update_position(self):
             return
 ```
 
-=== 4. Futures vs Spot Trading Differences ===
+=== 4. Spot Trading Exit Management ===
 
-PROBLEM: Using futures-style exit logic for spot trading
+NSE/BSE equity trading requires using `on_open_position()` and `update_position()` for exit management:
 
-FUTURES TRADING (allows stop_loss/take_profit in go_long):
 ```
 def go_long(self):
-    self.buy = qty, self.price
-    self.stop_loss = self.price * 0.95    # ✓ Works for futures
-    self.take_profit = self.price * 1.10  # ✓ Works for futures
-```
+    qty = utils.size_to_qty(self.balance * 0.1, self.close, fee_rate=self.fee_rate)
+    self.buy = qty, self.close
 
-SPOT TRADING (requires update_position):
-```
-def go_long(self):
-    self.buy = qty, self.close  # Note: use self.close, not self.price
+def on_open_position(self, order):
+    self.stop_loss = self.position.qty, self.price * 0.95
+    self.take_profit = self.position.qty, self.price * 1.10
 
 def update_position(self):
     if self.is_long:
+        # Trailing stop or other exit logic
         if self.close <= self.entry_price * 0.95:
             self.liquidate()
         elif self.close >= self.entry_price * 1.10:
@@ -533,8 +524,8 @@ PROBLEM: Multiple routes with same exchange-symbol pair
 ```
 # WRONG - Causes InvalidRoutes error
 "routes": [
-    {"exchange": "Binance Spot", "strategy": "MyStrategy", "symbol": "BTC-USDT", "timeframe": "1h"},
-    {"exchange": "Binance Spot", "strategy": "MyStrategy", "symbol": "BTC-USDT", "timeframe": "4h"}
+    {"exchange": "NSE", "strategy": "MyStrategy", "symbol": "RELIANCE-INR", "timeframe": "1D"},
+    {"exchange": "NSE", "strategy": "MyStrategy", "symbol": "RELIANCE-INR", "timeframe": "1W"}
 ]
 # ERROR: each exchange-symbol pair can be traded only once
 ```
@@ -542,14 +533,14 @@ PROBLEM: Multiple routes with same exchange-symbol pair
 SOLUTION: Run separate backtests for different timeframes
 ```
 # CORRECT - Separate backtests
-# Backtest 1: 1h timeframe
+# Backtest 1: Daily timeframe
 "routes": [
-    {"exchange": "Binance Spot", "strategy": "MyStrategy", "symbol": "BTC-USDT", "timeframe": "1h"}
+    {"exchange": "NSE", "strategy": "MyStrategy", "symbol": "RELIANCE-INR", "timeframe": "1D"}
 ]
 
-# Backtest 2: 4h timeframe
+# Backtest 2: Weekly timeframe
 "routes": [
-    {"exchange": "Binance Spot", "strategy": "MyStrategy", "symbol": "BTC-USDT", "timeframe": "4h"}
+    {"exchange": "NSE", "strategy": "MyStrategy", "symbol": "RELIANCE-INR", "timeframe": "1W"}
 ]
 ```
 

@@ -130,7 +130,7 @@ def _post_notes(api_url: str, auth: str, session_id: str, title: Optional[str],
 
 def create_significance_test_draft_service(
     exchange: str = "NSE",
-    routes: str = '[{"exchange": "NSE", "strategy": "ExampleStrategy", "symbol": "RELIANCE-INR", "timeframe": "4h"}]',
+    routes: str = '[{"exchange": "NSE", "strategy": "ExampleStrategy", "symbol": "RELIANCE-INR", "timeframe": "1D"}]',
     data_routes: str = '[]',
     start_date: str = "2021-01-01",
     finish_date: str = "2022-01-01",

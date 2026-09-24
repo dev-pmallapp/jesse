@@ -42,7 +42,7 @@ def register_monte_carlo_tools(mcp):
     @mcp.tool()
     def create_monte_carlo_draft(
         exchange: str = "NSE",
-        routes: str = '[{"exchange": "NSE", "strategy": "ExampleStrategy", "symbol": "RELIANCE-INR", "timeframe": "4h"}]',
+        routes: str = '[{"exchange": "NSE", "strategy": "ExampleStrategy", "symbol": "RELIANCE-INR", "timeframe": "1D"}]',
         data_routes: str = '[]',
         start_date: str = "2024-01-01",
         finish_date: str = "2024-03-01",

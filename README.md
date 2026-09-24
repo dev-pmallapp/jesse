@@ -18,7 +18,9 @@ Algo-trading was 😵‍💫, we made it 🤩
 
 ---
 
-Jesse is an advanced crypto trading framework that aims to **simplify** **researching** and defining **YOUR OWN trading strategies** for backtesting, optimizing, and live trading.
+Jesse is an advanced trading framework that aims to **simplify** **researching** and defining **YOUR OWN trading strategies** for backtesting, optimizing, and live trading.
+
+**Note: This fork is NSE/BSE-only.** It supports spot equity backtesting on Indian exchanges (NSE and BSE) for daily (`1D`) and weekly (`1W`) timeframes. Crypto exchanges and related data sources have been removed. For a full-featured Jesse fork with crypto support, see the original repository.
 
 ## What is Jesse?
 Watch this video to get a quick overview of Jesse:
