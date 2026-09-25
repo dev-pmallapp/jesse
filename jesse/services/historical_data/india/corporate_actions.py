@@ -191,7 +191,19 @@ def parse_subject(subject: str) -> list[tuple[ActionKind, float]]:
         if _DEBT_KEYWORD_RE.search(clause) is not None:
             # A bonus/rights *debenture*/NCD/bond/preference-share issue changes the
             # company's debt/preference capital, not its ordinary share count or face
-            # value - nothing here for D7 to adjust (like a cash dividend).
+            # value - nothing here for D7 to adjust (like a cash dividend). BUT this
+            # clause might bundle a genuine equity action too, joined by a connector
+            # `_CLAUSE_SPLIT_RE` doesn't split on (`&`, a bare comma, or no connector at
+            # all - e.g. "Bonus Equity Shares 1:1 & Bonus NCRPS 4:1"; commas can't be
+            # added to the splitter since they also appear inside amounts). There is no
+            # safe way to tell here which ratio belongs to the equity leg and which to
+            # the debt/preference leg, so skipping the whole clause would silently leave
+            # a real equity bonus unadjusted (story #82 follow-up). More than one
+            # split/bonus/consolidation keyword, or more than one ratio, in the clause
+            # means more than one action is packed in here - a lone debt/preference
+            # clause has exactly one of each - so raise instead of guessing.
+            if len(_KEYWORD_RE.findall(clause)) > 1 or len(re.findall(r'\d+\s*:\s*\d+', clause)) > 1:
+                raise UnparsedCorporateAction(subject)
             continue
 
         bonus_match = _BONUS_RE.search(clause)

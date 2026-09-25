@@ -231,6 +231,31 @@ def test_parse_subject_still_parses_ordinary_bonus_after_ncrps_fix():
     assert parse_subject('Bonus 4:1') == [('bonus', 0.2)]
 
 
+@pytest.mark.parametrize('subject', [
+    # An equity bonus bundled with a preference/debt bonus in ONE clause, joined by a
+    # connector `_CLAUSE_SPLIT_RE` doesn't split on ('&', a bare comma, or nothing) - the
+    # clause can't be safely attributed to "just skip the debt leg", so it must raise
+    # rather than silently drop the equity leg (story #82 follow-up).
+    'Scheme of Arrangement - Bonus Equity Shares 1:1 & Bonus NCRPS 4:1',
+    'Bonus 1:1, Bonus NCRPS 4:1',
+    'Bonus Equity 1:1 Bonus Ncrps 4:1',
+])
+def test_parse_subject_raises_for_mixed_equity_and_debt_bundled_in_one_clause(subject):
+    with pytest.raises(UnparsedCorporateAction):
+        parse_subject(subject)
+
+
+@pytest.mark.parametrize('subject', [
+    # Same equity+NCRPS mix, but joined by a connector the splitter DOES split on - each
+    # half becomes its own clause, so the debt leg is safely skippable and only the
+    # equity bonus survives.
+    'Bonus 1:1 / Bonus NCRPS 4:1',
+    'Bonus 1:1 and Bonus NCRPS 4:1',
+])
+def test_parse_subject_splits_mixed_equity_and_debt_when_connector_is_split_on(subject):
+    assert parse_subject(subject) == [('bonus', 0.5)]
+
+
 def test_parse_subject_multi_action_split_on_slash_semicolon_and_and():
     # Real multi-action subjects are not in the fixture; this exercises the clause
     # splitter itself against all three documented separators, making sure the
