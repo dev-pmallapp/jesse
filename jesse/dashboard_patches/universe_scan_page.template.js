@@ -421,6 +421,16 @@ function createController(root) {
     return text.split(/[\n,]/).map(function (s) { return s.trim(); }).filter(Boolean);
   }
 
+  // `usx-start-error` is the only error/alert area this page has, so every network
+  // failure (not just a failed "Start scan") surfaces there rather than failing
+  // silently - a fetch() rejection (offline, DNS, CORS, ...) never resolves the `.then`
+  // above, so without a `.catch` these calls would just look like nothing happened.
+  function showError(message) {
+    const errEl = q('usx-start-error');
+    errEl.textContent = message;
+    errEl.classList.remove('usx-hidden');
+  }
+
   // ------------------------------------------------------------- options --
 
   function loadOptions() {
@@ -428,6 +438,8 @@ function createController(root) {
       if (!r.ok) return;
       state.options = r.data;
       populateOptions(r.data);
+    }).catch(function () {
+      showError('Could not load scan options from the server.');
     });
   }
 
@@ -520,8 +532,7 @@ function createController(root) {
       loadSessionsList();
     }).catch(function () {
       startBtn.disabled = false;
-      errEl.textContent = 'Could not reach the server.';
-      errEl.classList.remove('usx-hidden');
+      showError('Could not reach the server.');
     });
   }
 
@@ -548,7 +559,9 @@ function createController(root) {
 
   function onCancelClick() {
     if (!state.session) return;
-    api('/universe-scan/cancel', { id: state.session.id });
+    api('/universe-scan/cancel', { id: state.session.id }).catch(function () {
+      showError('Could not cancel the scan. Please try again.');
+    });
   }
 
   function renderSession(session) {
@@ -761,6 +774,8 @@ function createController(root) {
     api('/universe-scan/sessions', {}).then(function (r) {
       if (!r.ok) return;
       renderSessionsList(r.data.sessions || []);
+    }).catch(function () {
+      showError('Could not load past sessions from the server.');
     });
   }
 
@@ -785,6 +800,11 @@ function createController(root) {
         if (!window.confirm('Delete session ' + s.id + '?')) return;
         api('/universe-scan/delete', { id: s.id }).then(function (r) {
           if (r.ok) loadSessionsList(); else window.alert((r.data && r.data.message) || 'Could not delete.');
+        }).catch(function () {
+          // A network-level failure (as opposed to the `r.ok === false` branch above,
+          // a server-level failure) - alert() rather than the page-level error banner,
+          // matching this same handler's own sibling failure path immediately above.
+          window.alert('Could not delete session ' + s.id + ': could not reach the server.');
         });
       });
 

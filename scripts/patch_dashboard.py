@@ -22,12 +22,17 @@ If a future bundle no longer contains one of those anchors, this script raises l
 PATCHING.md for the re-run procedure after an "Update frontend" commit.
 
 Usage:
-    python scripts/patch_dashboard.py [--static-dir jesse/static] [--check]
+    python scripts/patch_dashboard.py [--static-dir jesse/static] [--check | --revert]
 
 `--check` verifies the patch is present and up to date without writing anything;
 it exits non-zero if the patch is missing, stale, or an anchor can't be resolved.
 Re-running without `--check` is idempotent (a no-op, byte-identical result, if the
 bundle is already patched for the current template + resolved aliases).
+
+`--revert` undoes the patch in place (strips the two marker-prefixed insertions from
+the entry chunk and deletes the generated page chunk) - handy right before merging an
+upstream "Update frontend" commit, so that rebuild lands on a clean, unpatched bundle
+instead of merging on top of our insertions.
 """
 import argparse
 import re
@@ -104,7 +109,13 @@ def find_balanced_object_end(text: str, start: int) -> int:
     """`start` is the index of a JS object literal's opening `{`; returns the index
     just past its matching closing `}`, correctly skipping over nested `{}`/`[]`/`()`
     and over any of those characters that appear inside a quoted string or template
-    literal (the minifier emits both `` `...` `` and, occasionally, quoted strings)."""
+    literal (the minifier emits both `` `...` `` and, occasionally, quoted strings).
+
+    Note: regex literals (`/like this/`) aren't tracked as a delimiter here, so a
+    stray `{`/`}` inside one would throw off the depth count - acceptable because every
+    object this is called on (the route record, and the marker-inserted objects
+    `strip_patch` re-scans) never contains one; an unbalanced scan raises `PatchError`
+    below instead of returning a wrong-but-plausible offset."""
     depth = 0
     i = start
     n = len(text)
@@ -174,6 +185,48 @@ def patch_nav(entry_text: str) -> tuple[str, bool]:
     icon_var = m.group(1)
     insertion = f',{MARKER}{{name:`{NAV_LABEL}`,to:`{ROUTE_PATH}`,icon:{icon_var}}}'
     return entry_text[:m.end()] + insertion + entry_text[m.end():], True
+
+
+def strip_patch(text: str) -> str:
+    """The exact inverse of `patch_routes`/`patch_nav`: removes every insertion they
+    made. Each insertion has the fixed shape `,` + MARKER + a balanced `{...}` object
+    literal spliced in right after an anchor (see both functions above), so this just
+    finds each MARKER occurrence and deletes that comma, the marker, and the object
+    that follows it, until none remain. Used by `unpatch()` below - and, in turn, by
+    the test suite to derive a real "pre-patch" bundle from the committed, already-
+    patched one without depending on git history (see PATCHING.md)."""
+    while True:
+        marker_at = text.find(MARKER)
+        if marker_at == -1:
+            return text
+        if marker_at == 0 or text[marker_at - 1] != ',':
+            raise PatchError(f'found {MARKER!r} not immediately preceded by a comma - cannot safely unpatch')
+        obj_start = marker_at + len(MARKER)
+        if obj_start >= len(text) or text[obj_start] != '{':
+            raise PatchError(f'found {MARKER!r} not immediately followed by an object literal - cannot safely unpatch')
+        obj_end = find_balanced_object_end(text, obj_start)
+        text = text[:marker_at - 1] + text[obj_end:]
+
+
+def unpatch(static_dir: Path) -> bool:
+    """Reverts `patch()` in place: strips both marker-prefixed insertions from the
+    entry chunk (via `strip_patch`) and deletes the generated page chunk. Returns
+    True if anything was actually reverted, False if the bundle was already
+    unpatched. This is the `--revert` CLI action, and also what the test suite uses
+    to build a real unpatched fixture out of the committed, patched bundle."""
+    entry_path = find_entry_chunk(static_dir)
+    entry_text = _read(entry_path)
+    stripped_text = strip_patch(entry_text)
+    entry_changed = stripped_text != entry_text
+    if entry_changed:
+        entry_path.write_text(stripped_text, encoding='utf-8')
+
+    generated_path = static_dir / '_nuxt' / GENERATED_CHUNK_NAME
+    generated_existed = generated_path.exists()
+    if generated_existed:
+        generated_path.unlink()
+
+    return entry_changed or generated_existed
 
 
 def find_vue_runtime_chunk(static_dir: Path) -> tuple[Path, str]:
@@ -265,10 +318,21 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--static-dir', default=str(DEFAULT_STATIC_DIR), help='Path to jesse/static (default: %(default)s)')
     parser.add_argument('--check', action='store_true', help='Verify the patch is present and up to date; write nothing')
+    parser.add_argument(
+        '--revert', action='store_true',
+        help='Undo the patch (strip the route/nav insertions, delete the generated chunk) instead of applying it - '
+             'useful right before merging an upstream "Update frontend" rebuild',
+    )
     args = parser.parse_args(argv)
+    if args.check and args.revert:
+        parser.error('--check and --revert are mutually exclusive')
 
     static_dir = Path(args.static_dir)
     try:
+        if args.revert:
+            changed = unpatch(static_dir)
+            print('patch_dashboard --revert: OK' + (' (reverted)' if changed else ' (already unpatched)'))
+            return 0
         ok = patch(static_dir, check=args.check)
     except PatchError as e:
         print(f'patch_dashboard: {e}', file=sys.stderr)

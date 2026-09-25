@@ -60,12 +60,26 @@ reshuffle. To fix it:
    `SIGNIFICANCE_TEST_ROUTE_ANCHOR`, `RULE_TEST_NAV_RE`, `CREATE_ELEMENT_VNODE_RE`) to
    match the new shape, keeping the same "search by stable content, not by name"
    principle.
-4. Re-run `tests/test_patch_dashboard.py` - it fetches a real, known-unpatched bundle
-   snapshot from git history (`git show <old-commit>:jesse/static/...`) via the
-   `unpatched_static_dir` fixture, so it exercises the exact "patch a freshly rebuilt
-   bundle" scenario without needing a live rebuild to test against. Update
-   `UNPATCHED_COMMIT` in that file to a commit *after* the toolchain change once one
-   exists, so the fixture reflects the new shape going forward.
+4. Re-run `tests/test_patch_dashboard.py` - its `unpatched_static_dir` fixture derives
+   a real, known-unpatched bundle by copying the *committed* (already-patched) bundle
+   and then running `patch_dashboard.unpatch()` on the copy (the exact inverse of
+   `patch()` - it strips the two marker-prefixed insertions back out and deletes the
+   generated chunk), so it exercises the exact "patch a freshly rebuilt bundle"
+   scenario without depending on git history (a shallow CI checkout has none) or on
+   keeping a second, duplicate copy of the real entry chunk in the repo just to serve
+   as a fixture.
+
+## Before merging an "Update frontend" commit
+
+If you want to hand upstream's rebuild a clean, unpatched `jesse/static/` to merge
+against (rather than merging on top of our insertions and re-running the patcher
+after), revert this branch's patch first:
+
+```bash
+python scripts/patch_dashboard.py --revert   # strips the insertions, deletes the generated chunk
+```
+
+Then merge, and re-run the "How to re-run" steps above once the merge lands.
 
 If the Vue-runtime chunk's `createElementVNode` shape itself changes in a way
 `CREATE_ELEMENT_VNODE_RE` can no longer match (e.g. a Vue major-version upgrade changes
