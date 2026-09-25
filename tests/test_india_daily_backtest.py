@@ -95,3 +95,86 @@ def test_india_daily_exchange_rejects_non_daily_timeframe():
 
     with pytest.raises(InvalidRoutes):
         research.backtest(_base_config(), routes, [], _candles_dict(candles_array))
+
+
+def test_fast_mode_daily_balance_sampling_matches_step_mode():
+    """Regression for commit e3c862fb (fix(backtest): sample daily equity on the same
+    schedule in fast timestamp replay).
+
+    Before that fix, `_timestamp_simulator`'s fast-mode balance-sample gate compared
+    `(app.time - common_start) % cadence`, but on NSE/BSE session rows `app.time` is
+    the row timestamp + 60s while `common_start` is a raw row timestamp, so the
+    remainder was always 60s and only the initial and final balances were ever
+    sampled - two points, from which Sharpe/Sortino/max_drawdown are NaN. This test
+    fails on the parent commit (df2696c6) and passes on e3c862fb: it runs the same
+    long NSE daily-bars-only series through `research.backtest` once per mode and
+    asserts fast mode samples on the same per-session schedule as step mode, so both
+    report identical, finite metrics.
+
+    `TestFastModeDailyBalanceSampling` (see its module docstring) chains round-trip
+    trades continuously across a strictly-rising 158-session close series, so both
+    modes have real trades/returns to compute Sharpe & friends from - not vacuously
+    equal NaNs.
+    """
+    sessions = _nse_sessions(date(2024, 1, 1), date(2024, 8, 31))
+    warmup_sessions, trading_sessions = sessions[:5], sessions[5:]
+    assert len(trading_sessions) > 100  # sanity: long enough series to chain >5 round trips
+
+    warmup_array = np.array([
+        [session_row_timestamp(d), BASE_PRICE + i, BASE_PRICE + i, BASE_PRICE + i, BASE_PRICE + i, 1]
+        for i, d in enumerate(warmup_sessions)
+    ], dtype=np.float64)
+    # Trading prices continue the same rising-by-1 series right where warmup left off,
+    # so the take-profit-chain logic in TestFastModeDailyBalanceSampling keeps holding.
+    offset = len(warmup_sessions)
+    trading_array = np.array([
+        [session_row_timestamp(d), BASE_PRICE + offset + i, BASE_PRICE + offset + i,
+         BASE_PRICE + offset + i, BASE_PRICE + offset + i, 1]
+        for i, d in enumerate(trading_sessions)
+    ], dtype=np.float64)
+
+    routes = [
+        {'exchange': exchanges.NSE, 'symbol': SYMBOL, 'timeframe': '1D',
+         'strategy': 'TestFastModeDailyBalanceSampling'},
+    ]
+    config = {**_base_config(), 'warm_up_candles': 5}
+    warmup_candles = {
+        jh.key(exchanges.NSE, SYMBOL): {
+            'exchange': exchanges.NSE,
+            'symbol': SYMBOL,
+            'candles': warmup_array,
+        }
+    }
+
+    result_step = research.backtest(
+        config, routes, [], _candles_dict(trading_array),
+        warmup_candles=warmup_candles, fast_mode=False, generate_equity_curve=True,
+    )
+    result_fast = research.backtest(
+        config, routes, [], _candles_dict(trading_array),
+        warmup_candles=warmup_candles, fast_mode=True, generate_equity_curve=True,
+    )
+
+    # Real trading happened (chained round trips), not a vacuous zero-trade comparison.
+    assert result_step['metrics']['total'] > 5
+    assert result_fast['metrics']['total'] > 5
+
+    # The bug: fast mode's Sharpe (and friends) came out NaN because only 2 daily
+    # balances were ever sampled.
+    assert np.isfinite(result_fast['metrics']['sharpe_ratio'])
+
+    for key in (
+        'total', 'net_profit', 'sharpe_ratio', 'sortino_ratio',
+        'max_drawdown', 'annual_return',
+    ):
+        assert result_fast['metrics'][key] == pytest.approx(result_step['metrics'][key], nan_ok=False)
+
+    # Same daily-balance-sample schedule in both modes: same count and same
+    # timestamps, not just coincidentally-equal derived metrics.
+    step_points = result_step['equity_curve'][0]['data']
+    fast_points = result_fast['equity_curve'][0]['data']
+    assert len(fast_points) == len(step_points)
+    assert len(fast_points) > 2  # the bug's symptom was exactly 2 (initial + final)
+    # Sampling is roughly once per session (not, e.g., only at start/end).
+    assert len(fast_points) >= len(trading_sessions) * 0.5
+    assert [p['time'] for p in fast_points] == [p['time'] for p in step_points]
