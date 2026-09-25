@@ -130,9 +130,11 @@ def test_cnx_nifty_2015_row_maps_to_nifty_ticker():
 
 
 # --------------------------------------------------------------------------------------
-# Index Date field order: NSE writes DD-MM-YYYY almost everywhere, but at least one
-# observed file (2023-04-06) writes MM-DD-YYYY for every row instead. `_parse_index_date`
-# disambiguates using the requested session as the tie-breaker.
+# Index Date field order: a scan of every cached NSE index file found exactly three that
+# write `MM-DD-YYYY` for every row instead of the usual DD-MM-YYYY - 2023-04-06, -04-10,
+# and -04-11, all one glitch week. `_parse_index_date` disambiguates using the requested
+# session as the tie-breaker (see its docstring for the accepted residual risk: a
+# calendar filter was tried and rejected because it would reject the real 2023-04-10 file).
 # --------------------------------------------------------------------------------------
 
 _INDEX_HEADER = (
@@ -193,20 +195,31 @@ def test_index_file_date_matching_neither_field_order_still_raises():
         source.fetch_session(session)
 
 
-def test_transposed_trading_day_pair_is_not_silently_accepted_as_mm_dd():
-    # Review finding: a plain "prefer whichever reading equals session" is too loose. If
-    # NSE served the wrong day's file and that wrong day happens to be the DD/MM-transpose
-    # of a *different* real trading day, the MM-DD reading would also equal `session` -
-    # e.g. session 2023-05-09 served the 2023-09-05 file (both real trading days), written
-    # `05-09-2023`. The DD-MM reading (2023-09-05) is itself a valid trading day, so it
-    # must win and still raise, rather than silently accepting the MM-DD reading.
-    session = date(2023, 5, 9)
-    text = _INDEX_HEADER + 'Nifty 50,05-09-2023,10,11,9,10.5,0.5,1.2,1000,100,20,4,1.5\n'
+def test_mm_dd_yyyy_index_file_for_2023_04_10_parses_despite_dd_mm_being_a_real_trading_day():
+    # Documents the accepted trade-off (see `_parse_index_date`'s docstring): the DD-MM
+    # reading of `04-10-2023` is 2023-10-04, itself a real Wednesday trading day - so a
+    # calendar filter can't be used to reject the MM-DD reading here. Session-equality is
+    # the only tie-breaker, and this genuine NSE file must still import successfully.
+    session = date(2023, 4, 10)
+    text = _INDEX_HEADER + 'Nifty 50,04-10-2023,10,11,9,10.5,0.5,1.2,1000,100,20,4,1.5\n'
     client = FakeIndiaHttpClient({_index_url(session): _index_zip_free(text)})
     source = NseIndexSource(client=client)
 
-    with pytest.raises(ProviderSchemaError, match='does not match the requested session'):
-        source.fetch_session(session)
+    bars = source.fetch_session(session)
+
+    assert bars['NIFTY'].close == 10.5
+
+
+def test_mm_dd_yyyy_index_file_for_2023_04_11_parses_as_requested_session():
+    # The third (and last observed) file in NSE's April 2023 glitch week.
+    session = date(2023, 4, 11)
+    text = _INDEX_HEADER + 'Nifty 50,04-11-2023,10,11,9,10.5,0.5,1.2,1000,100,20,4,1.5\n'
+    client = FakeIndiaHttpClient({_index_url(session): _index_zip_free(text)})
+    source = NseIndexSource(client=client)
+
+    bars = source.fetch_session(session)
+
+    assert bars['NIFTY'].close == 10.5
 
 
 # --------------------------------------------------------------------------------------

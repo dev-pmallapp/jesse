@@ -28,7 +28,6 @@ from collections.abc import Callable
 from datetime import date, datetime, timedelta
 
 import jesse.helpers as jh
-from jesse.markets.india import is_trading_day
 
 from ..contracts import SymbolCatalogEntry
 from ..errors import HistoricalDataRequestError, ProviderSchemaError, ProviderUnavailableError
@@ -320,19 +319,20 @@ def _parse_index_date(value: str, session: date) -> date | None:
     there.
 
     NSE's own index files are inconsistent about field order: almost all of them write
-    `DD-MM-YYYY`, but at least one observed file (2023-04-06) writes `MM-DD-YYYY` for
-    every row instead. Since the file was fetched for a known `session` date, that's the
-    natural tie-breaker - but a plain "prefer whichever reading equals session" is too
-    loose: for a transposed pair of trading days (e.g. session 2023-05-09 served the
-    2023-09-05 file, both real trading days, row written `05-09-2023`) the MM-DD reading
-    would equal `session` too, silently masking a genuinely wrong-day file.
+    `DD-MM-YYYY`, but a scan of every cached index file found exactly three that write
+    `MM-DD-YYYY` for every row instead - 2023-04-06, 2023-04-10, and 2023-04-11, all one
+    glitch week. Since the file was fetched for a known `session` date, that's the
+    tie-breaker: try DD-MM first, then MM-DD, and take whichever equals `session`.
 
-    So the MM-DD reading is only trusted when the DD-MM reading *can't* be the real file
-    date: either it's not a calendar date at all, or NSE would never have published a
-    file for it because it's not a trading day (NSE publishes no index file on
-    weekends/holidays - `is_trading_day`, shared with BSE). If the DD-MM reading is a
-    valid trading day, it stands even when it disagrees with `session`, so
-    `check_session_date` still raises for a real wrong-day file.
+    A calendar filter (only trust MM-DD when the DD-MM reading isn't a real trading day)
+    was tried and rejected: for 2023-04-10 the DD-MM reading (2023-10-04) is itself a real
+    Wednesday trading day, so that filter would still reject the genuine file. The accepted
+    residual risk is the mirror image - a genuinely wrong-day file whose date happens to be
+    the exact day/month transpose of the requested session (e.g. session 2023-05-09 served
+    a file dated 2023-09-05) would be silently accepted as `session`. That's judged far
+    less likely than NSE's observed field-order glitch, and the `jh.debug` warning below
+    makes an MM-DD acceptance visible in import logs either way. If neither reading equals
+    `session` at all, fall back to the DD-MM reading so `check_session_date` still raises.
     """
     parts = value.strip().split('-')
     if len(parts) != 3:
@@ -348,7 +348,11 @@ def _parse_index_date(value: str, session: date) -> date | None:
     if dd_mm == session:
         return dd_mm
     mm_dd = _safe_date(year, first, second)
-    if mm_dd == session and (dd_mm is None or not is_trading_day(dd_mm)):
+    if mm_dd == session:
+        jh.debug(
+            f'NSE index file for session {session}: Index Date {value!r} parsed as MM-DD-YYYY '
+            'instead of the usual DD-MM-YYYY'
+        )
         return mm_dd
     return dd_mm
 
