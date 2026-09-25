@@ -130,9 +130,12 @@ def test_cnx_nifty_2015_row_maps_to_nifty_ticker():
 
 
 # --------------------------------------------------------------------------------------
-# Index Date field order: NSE writes DD-MM-YYYY almost everywhere, but at least one
-# observed file (2023-04-06) writes MM-DD-YYYY for every row instead. `_parse_index_date`
-# disambiguates using the requested session as the tie-breaker.
+# Index Date field order: a scan of every cached NSE index file found exactly three that
+# write `MM-DD-YYYY` for every row instead of the usual DD-MM-YYYY - 2023-04-06, -04-10,
+# and -04-11, all one glitch week. This is now an explicit, dated `FormatOverride` in
+# date_formats.py (see its module docstring) rather than a per-row guess: every session
+# outside that window is always read DD-MM-YYYY, full stop - see
+# test_india_date_formats.py for the override's own boundary tests.
 # --------------------------------------------------------------------------------------
 
 _INDEX_HEADER = (
@@ -166,24 +169,42 @@ def test_mm_dd_yyyy_index_file_for_2023_04_06_parses_as_requested_session():
     assert bars['NIFTY'].close == 17599.15
 
 
-def test_mm_dd_yyyy_index_file_with_day_over_12_still_matches_session():
-    # `04-13-2023` can't be read as DD-MM (month 13 is invalid), so the DD-MM/MM-DD
-    # ambiguity doesn't even arise here - but the fix must still recognize the MM-DD
-    # reading (13 April 2023) as matching the requested session.
+def test_mm_dd_yyyy_index_file_with_day_over_12_outside_override_raises():
+    # 2023-04-13 is one day past the glitch week (2023-04-06..11), so the fixed
+    # DD-MM-YYYY pattern applies - and `04-13-2023` isn't even a valid DD-MM-YYYY
+    # reading (month 13). Before the fix, the old MM-DD/DD-MM tie-breaker would still
+    # have recognized this as 13 April 2023; now, outside the dated override, nothing
+    # reinterprets it and this must raise instead of silently matching.
     session = date(2023, 4, 13)
     text = _INDEX_HEADER + 'Nifty 50,04-13-2023,10,11,9,10.5,0.5,1.2,1000,100,20,4,1.5\n'
     client = FakeIndiaHttpClient({_index_url(session): _index_zip_free(text)})
     source = NseIndexSource(client=client)
 
-    bars = source.fetch_session(session)
+    with pytest.raises(ProviderSchemaError, match='does not match the expected format'):
+        source.fetch_session(session)
 
-    assert bars['NIFTY'].close == 10.5
+
+def test_transposed_wrong_day_file_outside_override_raises():
+    # A genuinely wrong-day file whose date happens to be the exact day/month transpose
+    # of the requested session (session 2023-05-09 served a file dated 2023-09-05,
+    # written here as `05-09-2023`) must still be rejected - the accepted residual risk
+    # from before this fix (a `jh.debug`-logged silent accept) is gone now that the
+    # override never widens beyond its dated window.
+    session = date(2023, 5, 9)
+    text = _INDEX_HEADER + 'Nifty 50,05-09-2023,10,11,9,10.5,0.5,1.2,1000,100,20,4,1.5\n'
+    client = FakeIndiaHttpClient({_index_url(session): _index_zip_free(text)})
+    source = NseIndexSource(client=client)
+
+    with pytest.raises(ProviderSchemaError, match='does not match the requested session'):
+        source.fetch_session(session)
 
 
 def test_index_file_date_matching_neither_field_order_still_raises():
-    # A genuinely wrong file (neither DD-MM nor MM-DD equals the requested session) must
-    # still trip `check_session_date` - the field-order fix only disambiguates, it never
-    # hides a real "wrong day served" mismatch.
+    # A genuinely wrong file must still trip `check_session_date` even inside the
+    # override window: 2023-04-06 uses the MM-DD-YYYY override pattern, and this row's
+    # value parses fine under it (as 2023-05-07) but simply isn't the requested session -
+    # the override changes which pattern applies, it never hides a real "wrong day
+    # served" mismatch.
     session = date(2023, 4, 6)
     text = _INDEX_HEADER + 'Nifty 50,05-07-2023,10,11,9,10.5,0.5,1.2,1000,100,20,4,1.5\n'
     client = FakeIndiaHttpClient({_index_url(session): _index_zip_free(text)})
@@ -193,20 +214,33 @@ def test_index_file_date_matching_neither_field_order_still_raises():
         source.fetch_session(session)
 
 
-def test_transposed_trading_day_pair_is_not_silently_accepted_as_mm_dd():
-    # Review finding: a plain "prefer whichever reading equals session" is too loose. If
-    # NSE served the wrong day's file and that wrong day happens to be the DD/MM-transpose
-    # of a *different* real trading day, the MM-DD reading would also equal `session` -
-    # e.g. session 2023-05-09 served the 2023-09-05 file (both real trading days), written
-    # `05-09-2023`. The DD-MM reading (2023-09-05) is itself a valid trading day, so it
-    # must win and still raise, rather than silently accepting the MM-DD reading.
-    session = date(2023, 5, 9)
-    text = _INDEX_HEADER + 'Nifty 50,05-09-2023,10,11,9,10.5,0.5,1.2,1000,100,20,4,1.5\n'
+def test_mm_dd_yyyy_index_file_for_2023_04_10_parses_despite_dd_mm_being_a_real_trading_day():
+    # Documents why the override is a dated window rather than a calendar filter (see
+    # date_formats.py's module docstring): the DD-MM reading of `04-10-2023` is
+    # 2023-10-04, itself a real Wednesday trading day, so a "only trust MM-DD when DD-MM
+    # isn't a real trading day" filter would still reject this genuine NSE file. Being
+    # inside the explicit 2023-04-06..11 window is what makes the MM-DD-YYYY pattern
+    # apply here, regardless of what the DD-MM reading would have been.
+    session = date(2023, 4, 10)
+    text = _INDEX_HEADER + 'Nifty 50,04-10-2023,10,11,9,10.5,0.5,1.2,1000,100,20,4,1.5\n'
     client = FakeIndiaHttpClient({_index_url(session): _index_zip_free(text)})
     source = NseIndexSource(client=client)
 
-    with pytest.raises(ProviderSchemaError, match='does not match the requested session'):
-        source.fetch_session(session)
+    bars = source.fetch_session(session)
+
+    assert bars['NIFTY'].close == 10.5
+
+
+def test_mm_dd_yyyy_index_file_for_2023_04_11_parses_as_requested_session():
+    # The third (and last observed) file in NSE's April 2023 glitch week.
+    session = date(2023, 4, 11)
+    text = _INDEX_HEADER + 'Nifty 50,04-11-2023,10,11,9,10.5,0.5,1.2,1000,100,20,4,1.5\n'
+    client = FakeIndiaHttpClient({_index_url(session): _index_zip_free(text)})
+    source = NseIndexSource(client=client)
+
+    bars = source.fetch_session(session)
+
+    assert bars['NIFTY'].close == 10.5
 
 
 # --------------------------------------------------------------------------------------
