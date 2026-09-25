@@ -193,6 +193,22 @@ def test_index_file_date_matching_neither_field_order_still_raises():
         source.fetch_session(session)
 
 
+def test_transposed_trading_day_pair_is_not_silently_accepted_as_mm_dd():
+    # Review finding: a plain "prefer whichever reading equals session" is too loose. If
+    # NSE served the wrong day's file and that wrong day happens to be the DD/MM-transpose
+    # of a *different* real trading day, the MM-DD reading would also equal `session` -
+    # e.g. session 2023-05-09 served the 2023-09-05 file (both real trading days), written
+    # `05-09-2023`. The DD-MM reading (2023-09-05) is itself a valid trading day, so it
+    # must win and still raise, rather than silently accepting the MM-DD reading.
+    session = date(2023, 5, 9)
+    text = _INDEX_HEADER + 'Nifty 50,05-09-2023,10,11,9,10.5,0.5,1.2,1000,100,20,4,1.5\n'
+    client = FakeIndiaHttpClient({_index_url(session): _index_zip_free(text)})
+    source = NseIndexSource(client=client)
+
+    with pytest.raises(ProviderSchemaError, match='does not match the requested session'):
+        source.fetch_session(session)
+
+
 # --------------------------------------------------------------------------------------
 # Ticker derivation
 # --------------------------------------------------------------------------------------

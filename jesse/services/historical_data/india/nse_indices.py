@@ -28,6 +28,7 @@ from collections.abc import Callable
 from datetime import date, datetime, timedelta
 
 import jesse.helpers as jh
+from jesse.markets.india import is_trading_day
 
 from ..contracts import SymbolCatalogEntry
 from ..errors import HistoricalDataRequestError, ProviderSchemaError, ProviderUnavailableError
@@ -320,11 +321,18 @@ def _parse_index_date(value: str, session: date) -> date | None:
 
     NSE's own index files are inconsistent about field order: almost all of them write
     `DD-MM-YYYY`, but at least one observed file (2023-04-06) writes `MM-DD-YYYY` for
-    every row instead. Since the file was fetched for a known `session` date, use that as
-    the tie-breaker: try both field orders and take whichever equals `session`. If neither
-    does (a genuinely wrong file, not just a field-order swap), fall back to the DD-MM
-    reading so `check_session_date` still raises - this function only disambiguates, it
-    doesn't hide a real "wrong day served" mismatch.
+    every row instead. Since the file was fetched for a known `session` date, that's the
+    natural tie-breaker - but a plain "prefer whichever reading equals session" is too
+    loose: for a transposed pair of trading days (e.g. session 2023-05-09 served the
+    2023-09-05 file, both real trading days, row written `05-09-2023`) the MM-DD reading
+    would equal `session` too, silently masking a genuinely wrong-day file.
+
+    So the MM-DD reading is only trusted when the DD-MM reading *can't* be the real file
+    date: either it's not a calendar date at all, or NSE would never have published a
+    file for it because it's not a trading day (NSE publishes no index file on
+    weekends/holidays - `is_trading_day`, shared with BSE). If the DD-MM reading is a
+    valid trading day, it stands even when it disagrees with `session`, so
+    `check_session_date` still raises for a real wrong-day file.
     """
     parts = value.strip().split('-')
     if len(parts) != 3:
@@ -340,7 +348,7 @@ def _parse_index_date(value: str, session: date) -> date | None:
     if dd_mm == session:
         return dd_mm
     mm_dd = _safe_date(year, first, second)
-    if mm_dd == session:
+    if mm_dd == session and (dd_mm is None or not is_trading_day(dd_mm)):
         return mm_dd
     return dd_mm
 
