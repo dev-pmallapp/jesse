@@ -130,6 +130,70 @@ def test_cnx_nifty_2015_row_maps_to_nifty_ticker():
 
 
 # --------------------------------------------------------------------------------------
+# Index Date field order: NSE writes DD-MM-YYYY almost everywhere, but at least one
+# observed file (2023-04-06) writes MM-DD-YYYY for every row instead. `_parse_index_date`
+# disambiguates using the requested session as the tie-breaker.
+# --------------------------------------------------------------------------------------
+
+_INDEX_HEADER = (
+    'Index Name,Index Date,Open Index Value,High Index Value,Low Index Value,'
+    'Closing Index Value,Points Change,Change(%),Volume,Turnover (Rs. Cr.),P/E,P/B,Div Yield\n'
+)
+
+
+def test_dd_mm_yyyy_index_file_parses_normally():
+    session = date(2024, 1, 1)
+    text = _INDEX_HEADER + 'Nifty 50,01-01-2024,10,11,9,10.5,0.5,1.2,1000,100,20,4,1.5\n'
+    client = FakeIndiaHttpClient({_index_url(session): _index_zip_free(text)})
+    source = NseIndexSource(client=client)
+
+    bars = source.fetch_session(session)
+
+    assert bars['NIFTY'].close == 10.5
+
+
+def test_mm_dd_yyyy_index_file_for_2023_04_06_parses_as_requested_session():
+    # Real NSE quirk: the 2023-04-06 index file writes every row's date as `04-06-2023`
+    # (MM-DD-YYYY) rather than the usual DD-MM-YYYY - 4 June 2023 was a Sunday, so a
+    # literal DD-MM reading would be nonsensical for a trading-session file anyway.
+    session = date(2023, 4, 6)
+    text = _INDEX_HEADER + 'Nifty 50,04-06-2023,17533.85,17638.7,17502.85,17599.15,42.1,0.24,242708337,23543.21,20.72,4.12,1.41\n'
+    client = FakeIndiaHttpClient({_index_url(session): _index_zip_free(text)})
+    source = NseIndexSource(client=client)
+
+    bars = source.fetch_session(session)
+
+    assert bars['NIFTY'].close == 17599.15
+
+
+def test_mm_dd_yyyy_index_file_with_day_over_12_still_matches_session():
+    # `04-13-2023` can't be read as DD-MM (month 13 is invalid), so the DD-MM/MM-DD
+    # ambiguity doesn't even arise here - but the fix must still recognize the MM-DD
+    # reading (13 April 2023) as matching the requested session.
+    session = date(2023, 4, 13)
+    text = _INDEX_HEADER + 'Nifty 50,04-13-2023,10,11,9,10.5,0.5,1.2,1000,100,20,4,1.5\n'
+    client = FakeIndiaHttpClient({_index_url(session): _index_zip_free(text)})
+    source = NseIndexSource(client=client)
+
+    bars = source.fetch_session(session)
+
+    assert bars['NIFTY'].close == 10.5
+
+
+def test_index_file_date_matching_neither_field_order_still_raises():
+    # A genuinely wrong file (neither DD-MM nor MM-DD equals the requested session) must
+    # still trip `check_session_date` - the field-order fix only disambiguates, it never
+    # hides a real "wrong day served" mismatch.
+    session = date(2023, 4, 6)
+    text = _INDEX_HEADER + 'Nifty 50,05-07-2023,10,11,9,10.5,0.5,1.2,1000,100,20,4,1.5\n'
+    client = FakeIndiaHttpClient({_index_url(session): _index_zip_free(text)})
+    source = NseIndexSource(client=client)
+
+    with pytest.raises(ProviderSchemaError, match='does not match the requested session'):
+        source.fetch_session(session)
+
+
+# --------------------------------------------------------------------------------------
 # Ticker derivation
 # --------------------------------------------------------------------------------------
 

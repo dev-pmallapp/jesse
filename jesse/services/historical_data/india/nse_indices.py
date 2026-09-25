@@ -313,17 +313,41 @@ def _index_url(session: date) -> str:
     return _INDEX_URL_TEMPLATE.format(ddmmyyyy=session.strftime('%d%m%Y'))
 
 
-def _parse_ddmmyyyy_date(value: str) -> date | None:
-    """Parse the index file's `Index Date` column (`DD-MM-YYYY`) - distinct from both
-    bhavcopy's legacy `DD-MON-YYYY` and UDiFF's ISO `YYYY-MM-DD` (archive_parsing.py), so
-    it is not shared there.
+def _parse_index_date(value: str, session: date) -> date | None:
+    """Parse the index file's `Index Date` column - distinct from both bhavcopy's legacy
+    `DD-MON-YYYY` and UDiFF's ISO `YYYY-MM-DD` (archive_parsing.py), so it is not shared
+    there.
+
+    NSE's own index files are inconsistent about field order: almost all of them write
+    `DD-MM-YYYY`, but at least one observed file (2023-04-06) writes `MM-DD-YYYY` for
+    every row instead. Since the file was fetched for a known `session` date, use that as
+    the tie-breaker: try both field orders and take whichever equals `session`. If neither
+    does (a genuinely wrong file, not just a field-order swap), fall back to the DD-MM
+    reading so `check_session_date` still raises - this function only disambiguates, it
+    doesn't hide a real "wrong day served" mismatch.
     """
     parts = value.strip().split('-')
     if len(parts) != 3:
         return None
-    day_str, month_str, year_str = parts
+    first_str, second_str, year_str = parts
     try:
-        return date(int(year_str), int(month_str), int(day_str))
+        year = int(year_str)
+        first, second = int(first_str), int(second_str)
+    except ValueError:
+        return None
+
+    dd_mm = _safe_date(year, second, first)
+    if dd_mm == session:
+        return dd_mm
+    mm_dd = _safe_date(year, first, second)
+    if mm_dd == session:
+        return mm_dd
+    return dd_mm
+
+
+def _safe_date(year: int, month: int, day: int) -> date | None:
+    try:
+        return date(year, month, day)
     except ValueError:
         return None
 
@@ -358,7 +382,7 @@ def _parse_index_row(row: dict[str, str], session: date) -> tuple[str, str, Dail
     if not raw_name or not raw_date:
         return ROW_INVALID
 
-    row_date = _parse_ddmmyyyy_date(raw_date)
+    row_date = _parse_index_date(raw_date, session)
     if row_date is None:
         return ROW_INVALID
     check_session_date(row_date, session, label='NSE index file')
