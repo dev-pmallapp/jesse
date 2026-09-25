@@ -11,8 +11,9 @@ This module supplies the two things that adjustment needs:
   (e.g. `"Bonus 3:1"`, `"Face Value Split (Sub-Division) - From Rs10/- Per Share To
   Re 1/- Per Share"`) into zero or more `(kind, price_factor)` actions. Only
   split/bonus/consolidation of ORDINARY EQUITY are in scope - dividends, rights, AGM
-  notices, and bonus/rights DEBENTURES/NCDs/bonds/preference shares (a debt/preference
-  distribution, not a share-count/face-value change) return `[]` (a rights issue does
+  notices, and bonus/rights DEBENTURES/NCDs/bonds/preference shares (including
+  abbreviations like NCRPS/CRPS/RPS/OCRPS/CCPS - see `_DEBT_KEYWORD_RE`; a
+  debt/preference distribution, not a share-count/face-value change) return `[]` (a rights issue does
   technically affect a fair, dividend-adjusted price series, but D7 only covers
   split/bonus; rights handling is out of scope here). A subject that *mentions*
   split/sub-division/bonus/consolidation wording but does not match any known phrasing -
@@ -145,11 +146,22 @@ _SPLIT_RE = re.compile(rf'from\s+{_MONEY}.*?\bto\b\s+{_MONEY}', re.IGNORECASE)
 _KEYWORD_RE = re.compile(r'\b(?:split|sub-?division|bonus|consolidation)\b', re.IGNORECASE)
 
 # A clause carrying any of these words is a DEBT/PREFERENCE distribution (bonus/rights
-# debentures, NCDs, bonds, preference shares), not an ordinary-equity split/bonus - even
-# though it may otherwise match `_BONUS_RE`/`_SPLIT_RE` (e.g. "Bonus Debentures 3:1"
-# matches the bonus ratio pattern). Checked BEFORE the bonus/split patterns so it always
-# wins; treated the same as a dividend (out of scope for D7, not an error).
-_DEBT_KEYWORD_RE = re.compile(r'\b(?:debentures?|ncds?|bonds?|preference)\b', re.IGNORECASE)
+# debentures, NCDs, bonds, preference shares - including NSE's common abbreviations for
+# the latter: NCRPS "Non-Convertible Redeemable Preference Shares", CRPS "Convertible
+# Redeemable Preference Shares", RPS "Redeemable Preference Shares", OCRPS "Optionally
+# Convertible Redeemable Preference Shares", CCPS "Compulsorily Convertible Preference
+# Shares" - CCPS converts to equity only later/optionally, so at issue it is still a
+# preference-share bonus, not an ordinary-equity one), not an ordinary-equity
+# split/bonus - even though it may otherwise match `_BONUS_RE`/`_SPLIT_RE` (e.g. "Bonus
+# Debentures 3:1", "Scheme Of Arrangement - Bonus Ncrps 4:1" both match the bonus ratio
+# pattern; see TVSMOTOR's ex-25-Aug-2025 action, story #82). Checked BEFORE the
+# bonus/split patterns so it always wins; treated the same as a dividend (out of scope
+# for D7, not an error). Word-bounded so "rps"/"crps" don't fire on an unrelated word
+# that merely ends in those letters.
+_DEBT_KEYWORD_RE = re.compile(
+    r'\b(?:debentures?|ncds?|bonds?|preferences?|pref|prefs|ncrps|ocrps|ccps|crps|rps)\b',
+    re.IGNORECASE,
+)
 
 # A subject describing more than one action in one string is split on these connectors
 # before each clause is parsed independently. Deliberately narrower than a bare '/':
