@@ -446,3 +446,49 @@ class GetSignificanceTestSessionsRequestJson(BaseModel):
     title_search: Optional[str] = None
     status_filter: Optional[str] = None
     date_filter: Optional[str] = None
+
+
+# =============================================================================
+# Universe scan (dev-pmallapp/jesse#80)
+# =============================================================================
+
+class UniverseScanOptionsRequestJson(BaseModel):
+    exchange: str = 'NSE'
+
+
+class UniverseScanStartRequestJson(BaseModel):
+    id: Optional[str] = None
+    exchange: str = 'NSE'
+    universes: List[str] = []
+    symbols: List[str] = []
+    strategies: List[str]
+    timeframe: str = '1D'
+    data_start: str = '2021-01-01'
+    train_start: str
+    train_finish: str
+    test_start: str
+    test_finish: str
+    warm_up_candles: int = 210
+    balance: float = 1_000_000
+    fee: float = 0.001
+    run_fixed: bool = True
+    run_optimize: bool = False
+    trials_per_hp: int = 20
+    optimal_total: int = 30
+    objective_function: str = 'sharpe'
+    # None means "let the controller default it to ~75% of available cores".
+    cpu_cores: Optional[int] = None
+    import_candles: bool = False
+    min_train_days: int = 365
+
+
+class UniverseScanSessionRequestJson(BaseModel):
+    id: str
+
+
+class UniverseScanCancelRequestJson(BaseModel):
+    id: str
+
+
+class UniverseScanDeleteRequestJson(BaseModel):
+    id: str
