@@ -39,11 +39,11 @@ from .archive_parsing import (
     check_session_date,
     decode_csv_bytes,
     field,
-    parse_iso_date,
     read_csv_rows_from_text,
     unzip_single_csv,
 )
 from .archive_cache import ArchiveFileCache
+from .date_formats import date_format
 from .http import IndiaHttpClient
 from .sessions import IST
 from .sources import ArchiveDailySource, DailyBar, register_source
@@ -100,6 +100,10 @@ _UDIFF_REQUIRED_COLUMNS = (
 )
 # The legacy file has no ticker/date column at all - only these are actually read.
 _LEGACY_REQUIRED_COLUMNS = ('SC_CODE', 'SC_GROUP', 'SC_TYPE', 'OPEN', 'HIGH', 'LOW', 'CLOSE', 'NO_OF_SHRS')
+
+# `TradDt` never switches shape (see date_formats.py) - resolved once at import time
+# rather than looked up per row.
+_UDIFF_DATE_FORMAT = date_format('BSE', 'bse_bhavcopy_udiff')
 
 # Distinct from ROW_INVALID/ROW_SKIPPED (archive_parsing.py) so a legacy row dropped
 # only because its scrip code isn't in the current-ticker map gets its own jh.debug
@@ -425,7 +429,7 @@ def _parse_udiff_row(row: dict[str, str], session: date) -> tuple[str, str, Dail
         # problem, not a reason to abort the whole session's file.
         return ROW_INVALID
 
-    row_date = parse_iso_date(values['TradDt'])
+    row_date = _UDIFF_DATE_FORMAT.parse(values['TradDt'], session=session)
     if row_date is None:
         return ROW_INVALID
     check_session_date(row_date, session, label='BSE bhavcopy')

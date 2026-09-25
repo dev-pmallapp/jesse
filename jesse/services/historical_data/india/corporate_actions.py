@@ -45,7 +45,7 @@ from typing import Literal
 import jesse.helpers as jh
 
 from ..errors import ProviderRequestError, ProviderSchemaError, ProviderUnavailableError
-from .archive_parsing import parse_legacy_date
+from .date_formats import date_format
 from .http import IndiaHttpClient
 from .sessions import IST
 
@@ -82,6 +82,11 @@ _CORPORATE_ACTIONS_HEADERS = {
 }
 
 _REQUIRED_RECORD_FIELDS = ('isin', 'symbol', 'exDate', 'subject')
+
+# `exDate`'s format (see date_formats.py) - resolved once at import time rather than
+# looked up per record. No session to key an override off of here: unlike a whole-market
+# archive file, each corporate-action record is independently dated.
+_EX_DATE_FORMAT = date_format('NSE', 'corporate_actions')
 
 # How long a primed cookie jar is trusted before the next call re-primes it as a routine
 # refresh, even without an explicit rejection - Akamai's cookies are not documented to
@@ -465,12 +470,11 @@ class CorporateActionsStore:
                 isin = str(record['isin']).strip().upper()
                 symbol = str(record['symbol']).strip().upper()
                 subject = str(record['subject'])
-                ex_date = parse_legacy_date(str(record['exDate']))
+                ex_date = _EX_DATE_FORMAT.parse(str(record['exDate']))
                 if ex_date is None:
-                    # DD-Mon-YYYY, same shape `parse_legacy_date` already handles for
-                    # NSE's legacy bhavcopy TIMESTAMP column (case-insensitively
-                    # upper-cased there too) - a value that still fails to parse is a
-                    # genuine schema break.
+                    # DD-Mon-YYYY, the same shape/format NSE's legacy bhavcopy TIMESTAMP
+                    # column uses (case-insensitively, see date_formats.py) - a value
+                    # that still fails to parse is a genuine schema break.
                     raise ProviderSchemaError(
                         f'NSE corporate actions API returned an unparseable exDate {record["exDate"]!r} for {year}'
                     )

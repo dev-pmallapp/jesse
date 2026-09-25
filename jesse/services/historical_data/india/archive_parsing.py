@@ -6,8 +6,10 @@ byte-for-byte identical in column layout across exchanges (see
 docs/india-markets/spike-sources.md §4). This module holds the format-level pieces
 that behave the same regardless of which exchange served the file: zip unwrapping
 (with a wrong-day member-name guard for legacy files), None-safe field access, CSV
-parsing, CSV-byte decoding, date parsing/validation, and the positive-price rule a
-row must pass to become a `DailyBar`.
+parsing, CSV-byte decoding, session-date validation, and the positive-price rule a
+row must pass to become a `DailyBar`. Parsing a date string itself is not here - each
+source declares its own format explicitly in `date_formats.py` (see that module's
+docstring for why).
 
 What stays in each exchange's own module (`nse_archives.py`/`bse_archives.py`)
 instead: URLs, which series/group codes are in scope, how a duplicate ticker within
@@ -24,13 +26,16 @@ from ..contracts import HistoricalCandle
 from ..errors import HistoricalCandleValidationError, ProviderSchemaError
 from .sources import DailyBar
 
-# 3-letter uppercase English month abbreviations used by both NSE's legacy bhavcopy
-# TIMESTAMP column (DD-MON-YYYY) and NSE's legacy archive URL path. Built explicitly
-# (never via a locale-dependent strftime('%b')) so parsing/URL-building is identical
-# regardless of the running process's locale. BSE's legacy file has no date column at
-# all (see bse_archives.py), so only NSE currently consumes this for date parsing, but
-# it lives here rather than in nse_archives.py since it is the DD-MON-YYYY format
-# itself - not an NSE-specific rule - that these constants encode.
+# 3-letter uppercase English month abbreviations used by NSE's legacy archive URL path
+# (`_legacy_url`/`_expected_legacy_member_name` in nse_archives.py) and, via
+# `date_formats.DateFormat`, to parse the same DD-MON-YYYY shape (NSE's legacy bhavcopy
+# TIMESTAMP column and NSE's corporate-actions exDate field) independently of the
+# process's locale - see that module's docstring for why %b can't be trusted to
+# strptime directly. Built explicitly (never via a locale-dependent strftime('%b')) so
+# URL-building and date-parsing agree regardless of the running process's locale. BSE's
+# legacy file has no date column at all (see bse_archives.py), so only NSE consumes
+# this, but it lives here rather than in nse_archives.py since it is the DD-MON-YYYY
+# format itself - not an NSE-specific rule - that these constants encode.
 MONTH_ABBREVIATIONS = (
     'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
     'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC',
@@ -139,35 +144,12 @@ def read_csv_rows_from_text(text: str) -> tuple[list[str], list[dict[str, str]]]
     return stripped_fieldnames, rows
 
 
-def parse_iso_date(value: str) -> date | None:
-    try:
-        return date.fromisoformat(value.strip())
-    except ValueError:
-        # Empty or malformed - a row-scoped problem (counted as invalid by the caller),
-        # not the file-wide "wrong day served" problem `check_session_date` guards.
-        return None
-
-
-def parse_legacy_date(value: str) -> date | None:
-    parts = value.strip().split('-')
-    if len(parts) != 3:
-        return None
-    day_str, month_str, year_str = parts
-    month_str = month_str.strip().upper()
-    if month_str not in MONTH_ABBREVIATIONS:
-        return None
-    try:
-        return date(int(year_str), MONTH_ABBREVIATIONS.index(month_str) + 1, int(day_str))
-    except ValueError:
-        return None
-
-
 def check_session_date(row_date: date, session: date, *, label: str) -> None:
     # Guards against the exchange serving the wrong day's file under a requested URL -
     # every row in the file must carry the same session date we asked for. Only
     # reached once a row's date has actually parsed, so this is strictly about a
-    # parseable-but-wrong date, not an empty/malformed one (see `parse_iso_date`/
-    # `parse_legacy_date`).
+    # parseable-but-wrong date, not an empty/malformed one (see
+    # `date_formats.DateFormat.parse`).
     if row_date != session:
         raise ProviderSchemaError(f'{label} row date {row_date} does not match the requested session {session}')
 

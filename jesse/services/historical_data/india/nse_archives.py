@@ -38,13 +38,12 @@ from .archive_parsing import (
     check_archive_member_name,
     check_session_date,
     field,
-    parse_iso_date,
-    parse_legacy_date,
     read_csv_rows,
     read_csv_rows_from_text,
     unzip_single_csv,
 )
 from .archive_cache import ArchiveFileCache
+from .date_formats import date_format
 from .http import IndiaHttpClient
 from .sources import ArchiveDailySource, DailyBar, register_source
 from .symbols import to_jesse_symbol
@@ -95,6 +94,12 @@ _UDIFF_REQUIRED_COLUMNS = (
     'TckrSymb', 'SctySrs', 'OpnPric', 'HghPric', 'LwPric', 'ClsPric', 'TtlTradgVol', 'TradDt', 'Sgmt', 'FinInstrmTp',
 )
 _LEGACY_REQUIRED_COLUMNS = ('SYMBOL', 'SERIES', 'OPEN', 'HIGH', 'LOW', 'CLOSE', 'TOTTRDQTY', 'TIMESTAMP')
+
+# One format per NSE bhavcopy schema (see date_formats.py) - `TradDt`/`TIMESTAMP` never
+# switch shape within a schema, so these are resolved once at import time rather than
+# looked up per row.
+_UDIFF_DATE_FORMAT = date_format('NSE', 'nse_bhavcopy_udiff')
+_LEGACY_DATE_FORMAT = date_format('NSE', 'nse_bhavcopy_legacy')
 
 
 class NseBhavcopySource(ArchiveDailySource):
@@ -351,7 +356,7 @@ def _parse_udiff_row(row: dict[str, str], session: date) -> tuple[str, str, Dail
         # problem, not a reason to abort the whole session's file.
         return ROW_INVALID
 
-    row_date = parse_iso_date(values['TradDt'])
+    row_date = _UDIFF_DATE_FORMAT.parse(values['TradDt'], session=session)
     if row_date is None:
         return ROW_INVALID
     check_session_date(row_date, session, label='NSE bhavcopy')
@@ -376,7 +381,7 @@ def _parse_legacy_row(row: dict[str, str], session: date) -> tuple[str, str, Dai
     if any(not value for value in values.values()):
         return ROW_INVALID
 
-    row_date = parse_legacy_date(values['TIMESTAMP'])
+    row_date = _LEGACY_DATE_FORMAT.parse(values['TIMESTAMP'], session=session)
     if row_date is None:
         return ROW_INVALID
     check_session_date(row_date, session, label='NSE bhavcopy')

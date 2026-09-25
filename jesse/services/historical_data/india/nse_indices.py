@@ -33,6 +33,7 @@ from ..contracts import SymbolCatalogEntry
 from ..errors import HistoricalDataRequestError, ProviderSchemaError, ProviderUnavailableError
 from .archive_parsing import ROW_INVALID, build_bar, check_session_date, decode_csv_bytes, field, read_csv_rows_from_text
 from .archive_cache import ArchiveFileCache
+from .date_formats import date_format
 from .http import IndiaHttpClient
 from .sessions import IST
 from .sources import ArchiveDailySource, DailyBar, register_source
@@ -98,6 +99,10 @@ _REQUIRED_COLUMNS = (
     'Index Name', 'Index Date', 'Open Index Value', 'High Index Value', 'Low Index Value', 'Closing Index Value',
     'Volume',
 )
+
+# `Index Date`'s format (see date_formats.py, including the one dated exception to it) -
+# resolved once at import time rather than looked up per row.
+_INDEX_DATE_FORMAT = date_format('NSE', 'nse_indices')
 
 # How many calendar days to walk back from "today" (real IST date, or an injected one in
 # tests) looking for the most recently published index file, used to source the symbol
@@ -313,57 +318,6 @@ def _index_url(session: date) -> str:
     return _INDEX_URL_TEMPLATE.format(ddmmyyyy=session.strftime('%d%m%Y'))
 
 
-def _parse_index_date(value: str, session: date) -> date | None:
-    """Parse the index file's `Index Date` column - distinct from both bhavcopy's legacy
-    `DD-MON-YYYY` and UDiFF's ISO `YYYY-MM-DD` (archive_parsing.py), so it is not shared
-    there.
-
-    NSE's own index files are inconsistent about field order: almost all of them write
-    `DD-MM-YYYY`, but a scan of every cached index file found exactly three that write
-    `MM-DD-YYYY` for every row instead - 2023-04-06, 2023-04-10, and 2023-04-11, all one
-    glitch week. Since the file was fetched for a known `session` date, that's the
-    tie-breaker: try DD-MM first, then MM-DD, and take whichever equals `session`.
-
-    A calendar filter (only trust MM-DD when the DD-MM reading isn't a real trading day)
-    was tried and rejected: for 2023-04-10 the DD-MM reading (2023-10-04) is itself a real
-    Wednesday trading day, so that filter would still reject the genuine file. The accepted
-    residual risk is the mirror image - a genuinely wrong-day file whose date happens to be
-    the exact day/month transpose of the requested session (e.g. session 2023-05-09 served
-    a file dated 2023-09-05) would be silently accepted as `session`. That's judged far
-    less likely than NSE's observed field-order glitch, and the `jh.debug` warning below
-    makes an MM-DD acceptance visible in import logs either way. If neither reading equals
-    `session` at all, fall back to the DD-MM reading so `check_session_date` still raises.
-    """
-    parts = value.strip().split('-')
-    if len(parts) != 3:
-        return None
-    first_str, second_str, year_str = parts
-    try:
-        year = int(year_str)
-        first, second = int(first_str), int(second_str)
-    except ValueError:
-        return None
-
-    dd_mm = _safe_date(year, second, first)
-    if dd_mm == session:
-        return dd_mm
-    mm_dd = _safe_date(year, first, second)
-    if mm_dd == session:
-        jh.debug(
-            f'NSE index file for session {session}: Index Date {value!r} parsed as MM-DD-YYYY '
-            'instead of the usual DD-MM-YYYY'
-        )
-        return mm_dd
-    return dd_mm
-
-
-def _safe_date(year: int, month: int, day: int) -> date | None:
-    try:
-        return date(year, month, day)
-    except ValueError:
-        return None
-
-
 def _canonical_name(raw_name: str) -> str:
     return _INDEX_NAME_RENAMES.get(raw_name.strip().upper(), raw_name.strip())
 
@@ -394,9 +348,17 @@ def _parse_index_row(row: dict[str, str], session: date) -> tuple[str, str, Dail
     if not raw_name or not raw_date:
         return ROW_INVALID
 
-    row_date = _parse_index_date(raw_date, session)
+    row_date = _INDEX_DATE_FORMAT.parse(raw_date, session=session)
     if row_date is None:
-        return ROW_INVALID
+        # Unlike an unparseable OHLC/volume value elsewhere in this file (row-scoped,
+        # safe to skip), every row in this whole-market file shares the SAME Index Date
+        # - one that doesn't even parse under the format selected for this session
+        # means the format registry's assumption for this session is wrong, which is a
+        # file-wide problem worth stopping the import for, not a single bad row to drop
+        # silently (see date_formats.py's module docstring).
+        raise ProviderSchemaError(
+            f'NSE index file for {session}: Index Date {raw_date!r} does not match the expected format'
+        )
     check_session_date(row_date, session, label='NSE index file')
 
     close_str = field(row, 'Closing Index Value').strip()
