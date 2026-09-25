@@ -467,6 +467,22 @@ These are optional, additive changes; the scan's current file-based session mode
 endpoints and the mode's worker needs to also publish websocket events on top of writing to the
 session file it already writes to.
 
+## 8. Implementation note (post-report addendum)
+
+The design actually shipped (dev-pmallapp/jesse#90, `scripts/patch_dashboard.py` +
+`jesse/dashboard_patches/`) resolved the ยง7 blocker with option (b): the standalone
+`jesse/universe_scan_page/` was removed, `GET /universe-scan` now serves
+`jesse/static/index.html` (the same SPA shell as `GET /`), and the SPA route added to
+the entry chunk uses the bare `/universe-scan` path - matching how every other mode's
+own index route works. See `docs/dashboard-bundle/PATCHING.md` for how to re-run the
+patcher after a future "Update frontend" commit, and the template file's own docstring
+for why its Vue-runtime dependency was narrowed to a single export
+(`createElementVNode`) rather than the `defineComponent`/`ref`/`onMounted`/
+`onBeforeUnmount` set originally sketched in ยง5 - this page has no reactive state at
+all (everything is plain DOM, same as the standalone page it replaced), so a Vue
+"function ref" alone (called with the element on mount, `null` on unmount) is enough
+for its whole lifecycle.
+
 **Uncertain / not verified in this pass** (flagged per instructions, would need either a live
 running dashboard or a source map to confirm):
 - Whether the shared exception component (`mode:\`significance-test\`` prop, §3) accepts
