@@ -28,6 +28,7 @@ from collections.abc import Callable
 from datetime import date, datetime, timedelta
 
 import jesse.helpers as jh
+from jesse.markets.india import is_trading_day
 
 from ..contracts import SymbolCatalogEntry
 from ..errors import HistoricalDataRequestError, ProviderSchemaError, ProviderUnavailableError
@@ -313,17 +314,48 @@ def _index_url(session: date) -> str:
     return _INDEX_URL_TEMPLATE.format(ddmmyyyy=session.strftime('%d%m%Y'))
 
 
-def _parse_ddmmyyyy_date(value: str) -> date | None:
-    """Parse the index file's `Index Date` column (`DD-MM-YYYY`) - distinct from both
-    bhavcopy's legacy `DD-MON-YYYY` and UDiFF's ISO `YYYY-MM-DD` (archive_parsing.py), so
-    it is not shared there.
+def _parse_index_date(value: str, session: date) -> date | None:
+    """Parse the index file's `Index Date` column - distinct from both bhavcopy's legacy
+    `DD-MON-YYYY` and UDiFF's ISO `YYYY-MM-DD` (archive_parsing.py), so it is not shared
+    there.
+
+    NSE's own index files are inconsistent about field order: almost all of them write
+    `DD-MM-YYYY`, but at least one observed file (2023-04-06) writes `MM-DD-YYYY` for
+    every row instead. Since the file was fetched for a known `session` date, that's the
+    natural tie-breaker - but a plain "prefer whichever reading equals session" is too
+    loose: for a transposed pair of trading days (e.g. session 2023-05-09 served the
+    2023-09-05 file, both real trading days, row written `05-09-2023`) the MM-DD reading
+    would equal `session` too, silently masking a genuinely wrong-day file.
+
+    So the MM-DD reading is only trusted when the DD-MM reading *can't* be the real file
+    date: either it's not a calendar date at all, or NSE would never have published a
+    file for it because it's not a trading day (NSE publishes no index file on
+    weekends/holidays - `is_trading_day`, shared with BSE). If the DD-MM reading is a
+    valid trading day, it stands even when it disagrees with `session`, so
+    `check_session_date` still raises for a real wrong-day file.
     """
     parts = value.strip().split('-')
     if len(parts) != 3:
         return None
-    day_str, month_str, year_str = parts
+    first_str, second_str, year_str = parts
     try:
-        return date(int(year_str), int(month_str), int(day_str))
+        year = int(year_str)
+        first, second = int(first_str), int(second_str)
+    except ValueError:
+        return None
+
+    dd_mm = _safe_date(year, second, first)
+    if dd_mm == session:
+        return dd_mm
+    mm_dd = _safe_date(year, first, second)
+    if mm_dd == session and (dd_mm is None or not is_trading_day(dd_mm)):
+        return mm_dd
+    return dd_mm
+
+
+def _safe_date(year: int, month: int, day: int) -> date | None:
+    try:
+        return date(year, month, day)
     except ValueError:
         return None
 
@@ -358,7 +390,7 @@ def _parse_index_row(row: dict[str, str], session: date) -> tuple[str, str, Dail
     if not raw_name or not raw_date:
         return ROW_INVALID
 
-    row_date = _parse_ddmmyyyy_date(raw_date)
+    row_date = _parse_index_date(raw_date, session)
     if row_date is None:
         return ROW_INVALID
     check_session_date(row_date, session, label='NSE index file')
