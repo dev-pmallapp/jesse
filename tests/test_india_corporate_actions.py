@@ -207,12 +207,53 @@ def test_parse_subject_raises_for_degenerate_matched_ratios(subject):
     'Issue of Bonus Debentures in the ratio 1:1',
     'Issue of NCDs 1:1',
     'Preference Share Bonus 1:1',
+    # NSE's abbreviations for preference-share classes (story #82: TVSMOTOR's real
+    # ex-25-Aug-2025 subject, plus common variants) - none of these change the ordinary
+    # share count, so must parse the same as any other debt/preference distribution.
+    'Scheme Of Arrangement - Bonus Ncrps 4:1',  # the real TVSMOTOR subject
+    'Bonus NCRPS 1:1',
+    'Bonus Issue Of Ncrps',
+    'Bonus Crps 1:10',
+    'Bonus RPS 1:1',
+    'Bonus OCRPS 2:1',
+    'Bonus CCPS 1:1',  # compulsorily convertible - still a preference share at issue
 ])
 def test_parse_subject_ignores_debt_and_preference_distributions(subject):
     # A bonus/rights debenture/NCD/bond/preference-share issue is a debt/preference
     # distribution, not an equity split/bonus - out of scope, same as a dividend, even
     # though the ratio phrasing would otherwise match `_BONUS_RE`.
     assert parse_subject(subject) == []
+
+
+def test_parse_subject_still_parses_ordinary_bonus_after_ncrps_fix():
+    # Guards against a too-broad debt/preference regex change swallowing genuine
+    # ordinary-equity bonuses (e.g. matching "bonus" itself, or any "...rps"-ending word).
+    assert parse_subject('Bonus 4:1') == [('bonus', 0.2)]
+
+
+@pytest.mark.parametrize('subject', [
+    # An equity bonus bundled with a preference/debt bonus in ONE clause, joined by a
+    # connector `_CLAUSE_SPLIT_RE` doesn't split on ('&', a bare comma, or nothing) - the
+    # clause can't be safely attributed to "just skip the debt leg", so it must raise
+    # rather than silently drop the equity leg (story #82 follow-up).
+    'Scheme of Arrangement - Bonus Equity Shares 1:1 & Bonus NCRPS 4:1',
+    'Bonus 1:1, Bonus NCRPS 4:1',
+    'Bonus Equity 1:1 Bonus Ncrps 4:1',
+])
+def test_parse_subject_raises_for_mixed_equity_and_debt_bundled_in_one_clause(subject):
+    with pytest.raises(UnparsedCorporateAction):
+        parse_subject(subject)
+
+
+@pytest.mark.parametrize('subject', [
+    # Same equity+NCRPS mix, but joined by a connector the splitter DOES split on - each
+    # half becomes its own clause, so the debt leg is safely skippable and only the
+    # equity bonus survives.
+    'Bonus 1:1 / Bonus NCRPS 4:1',
+    'Bonus 1:1 and Bonus NCRPS 4:1',
+])
+def test_parse_subject_splits_mixed_equity_and_debt_when_connector_is_split_on(subject):
+    assert parse_subject(subject) == [('bonus', 0.5)]
 
 
 def test_parse_subject_multi_action_split_on_slash_semicolon_and_and():
