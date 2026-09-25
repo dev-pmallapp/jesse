@@ -23,6 +23,7 @@ from jesse.services.historical_data import (
 )
 from jesse.services.historical_data.errors import ProviderPaginationError
 from jesse.repositories import candle_repository
+from jesse.services.symbol_input import normalize_symbol
 
 
 def candle_import_progress_key(client_id: str) -> str:
@@ -71,12 +72,24 @@ def get_import_outcome(client_id: str) -> dict:
 
 
 def validate_import_request(exchange: str, symbol: str, start_date_str: str) -> tuple[int, str]:
-    """Validate values that can be rejected before an import worker is started."""
+    """Validate values that can be rejected before an import worker is started.
+
+    `symbol` accepts a bare NSE/BSE ticker (`RELIANCE`) or a TradingView-style symbol
+    (`NSE:RELIANCE`) in addition to the internal `RELIANCE-INR` form - this is the
+    entry point every import path (dashboard, `research.import_candles`) funnels
+    through, so normalizing here is enough for all of them (`_run` re-validates with
+    the same function and uses its returned, already-normalized symbol).
+    """
     if exchange not in historical_provider_names:
         raise ValueError(
             f'{exchange} is not a supported historical provider. '
             f'Supported providers are: {historical_provider_names}'
         )
+
+    try:
+        symbol = normalize_symbol(exchange, symbol)
+    except exceptions.InvalidSymbol as e:
+        raise ValueError(str(e)) from None
 
     try:
         start_timestamp = jh.arrow_to_timestamp(arrow.get(start_date_str, 'YYYY-MM-DD'))

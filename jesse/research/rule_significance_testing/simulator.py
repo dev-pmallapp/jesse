@@ -31,8 +31,13 @@ from jesse.modes.backtest_mode import (
 
 # Reuse _format_config from the research backtest module so the config dict
 # accepted here is identical to what backtest() and monte_carlo_candles() accept.
+# _normalize_candles_dict is reused too: unlike routes/data_routes (already normalized
+# by Route.__init__ once router.initiate() runs below), the `candles`/`warmup_candles`
+# dicts are looked up by a router-built key, so they must be normalized and re-keyed
+# here at this function's own boundary - see research/backtest.py's docstring.
 from jesse.research.backtest import (
     _format_config,
+    _normalize_candles_dict,
     _reset_research_runtime_state,
     _validate_observed_one_minute_candles,
 )
@@ -72,6 +77,9 @@ def run_signal_only_backtest(
     close_prices   : np.ndarray[float64] shape (N,)
     signals        : np.ndarray[int8]    shape (N,)
     """
+    candles = _normalize_candles_dict(candles)
+    warmup_candles = _normalize_candles_dict(warmup_candles) if warmup_candles else warmup_candles
+
     # Validate before touching process-wide state so malformed input cannot
     # partially initialize a research session.
     _validate_observed_one_minute_candles(candles)

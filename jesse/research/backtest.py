@@ -11,7 +11,32 @@ from jesse.modes.backtest_mode import simulator
 from jesse.config import config as jesse_config, reset_config, set_config
 from jesse.routes import router
 from jesse.store import store
-import jesse.helpers as jh 
+from jesse.services.symbol_input import normalize_symbol
+import jesse.helpers as jh
+
+
+def _normalize_route_symbols(routes: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    """Accept a bare/TradingView symbol (`RELIANCE`, `NSE:RELIANCE`) in a route dict the
+    same way the router does for strategies' routes.py - `router.initiate` (via
+    `Route.__init__`) normalizes again downstream, so this is only needed here because
+    the `candles` dict below must be re-keyed to match what the router ends up using.
+    """
+    return [{**r, 'symbol': normalize_symbol(r['exchange'], r['symbol'])} for r in routes]
+
+
+def _normalize_candles_dict(candles: dict) -> dict:
+    """Normalise each entry's `symbol` and re-key the dict on it.
+
+    `candles`/`warmup_candles` are keyed by `jh.key(exchange, symbol)` (see this
+    module's docstring example), and the engine looks entries up by that same key
+    built from the (already-normalized) router routes - so a bare-ticker `candles`
+    dict must be re-keyed here, not just have its `symbol` field rewritten in place.
+    """
+    normalized = {}
+    for entry in candles.values():
+        symbol = normalize_symbol(entry['exchange'], entry['symbol'])
+        normalized[jh.key(entry['exchange'], symbol)] = {**entry, 'symbol': symbol}
+    return normalized
 
 
 def _validate_observed_one_minute_candles(candles: dict) -> None:
@@ -100,7 +125,16 @@ def backtest(
             'candles': np.array([]),
         },
     }
+
+    `routes`/`data_routes`/`candles` symbols also accept a bare NSE/BSE ticker
+    (`RELIANCE`) or a TradingView-style symbol (`NSE:RELIANCE`) - both are normalized
+    to the internal `RELIANCE-INR` form before the backtest runs.
     """
+    routes = _normalize_route_symbols(routes)
+    data_routes = _normalize_route_symbols(data_routes)
+    candles = _normalize_candles_dict(candles)
+    warmup_candles = _normalize_candles_dict(warmup_candles) if warmup_candles else warmup_candles
+
     return _isolated_backtest(
         config,
         routes,

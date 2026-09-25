@@ -2,7 +2,7 @@ import csv
 import io
 import re
 from collections.abc import Iterator
-from typing import Annotated
+from typing import Annotated, Union
 
 from fastapi import APIRouter, Depends, Form
 from fastapi.responses import StreamingResponse
@@ -19,7 +19,9 @@ from jesse.services.web import (
     CopyCandlesRequestJson,
 )
 from jesse.services.redis import is_process_active
+from jesse.services.symbol_input import normalize_symbol
 import jesse.helpers as jh
+from jesse import exceptions
 
 router = APIRouter(prefix="/candles", tags=["Candles"], dependencies=[Depends(require_auth)])
 # Native form downloads cannot set an Authorization header, so this isolated route verifies
@@ -51,12 +53,21 @@ def _stream_candle_csv(exchange: str, symbol: str) -> Iterator[str]:
         yield output.getvalue()
 
 
-@export_router.post('/export')
+@export_router.post('/export', response_model=None)
 def export_candles(
     exchange: Annotated[str, Form()],
     symbol: Annotated[str, Form()],
-) -> StreamingResponse:
-    """Stream one canonical exchange/symbol series as a round-trippable CSV download."""
+) -> Union[StreamingResponse, JSONResponse]:
+    """Stream one exchange/symbol series as a round-trippable CSV download.
+
+    `symbol` accepts a bare NSE/BSE ticker or a TradingView-style symbol in addition
+    to the internal BASE-QUOTE form.
+    """
+    try:
+        symbol = normalize_symbol(exchange, symbol)
+    except exceptions.InvalidSymbol as e:
+        return JSONResponse({'error': str(e)}, status_code=422)
+
     filename = _safe_export_filename(exchange, symbol)
     return StreamingResponse(
         _stream_candle_csv(exchange, symbol),
@@ -142,13 +153,19 @@ def clear_candles_database_cache():
 def get_candles(json_request: GetCandlesRequestJson) -> JSONResponse:
     """
     Get candles for a specific exchange, symbol, and timeframe
+
+    `symbol` accepts a bare NSE/BSE ticker or a TradingView-style symbol in addition
+    to the internal BASE-QUOTE form.
     """
 
     jh.validate_cwd()
 
     from jesse.modes.data_provider import get_candles as gc
 
-    arr = gc(json_request.exchange, json_request.symbol, json_request.timeframe)
+    try:
+        arr = gc(json_request.exchange, json_request.symbol, json_request.timeframe)
+    except exceptions.InvalidSymbol as e:
+        return JSONResponse({'error': str(e)}, status_code=422)
 
     return JSONResponse({
         'id': json_request.id,
@@ -219,11 +236,19 @@ def get_existing_candles() -> JSONResponse:
 @router.post("/delete")
 def delete_candles(json_request: DeleteCandlesRequestJson) -> JSONResponse:
     """
-    Delete candles for a specific exchange and symbol
+    Delete candles for a specific exchange and symbol.
+
+    `symbol` accepts a bare NSE/BSE ticker or a TradingView-style symbol in addition
+    to the internal BASE-QUOTE form.
     """
 
     try:
-        candle_repository.delete_candles_from_db(json_request.exchange, json_request.symbol)
+        symbol = normalize_symbol(json_request.exchange, json_request.symbol)
+    except exceptions.InvalidSymbol as e:
+        return JSONResponse({'error': str(e)}, status_code=422)
+
+    try:
+        candle_repository.delete_candles_from_db(json_request.exchange, symbol)
         return JSONResponse({'message': 'Candles deleted successfully'}, status_code=200)
     except Exception as e:
         return JSONResponse({'error': str(e)}, status_code=500)
@@ -233,27 +258,32 @@ def delete_candles(json_request: DeleteCandlesRequestJson) -> JSONResponse:
 def copy_candles(json_request: CopyCandlesRequestJson) -> JSONResponse:
     """
     Duplicate one exchange/symbol's candles under another exchange (and optionally symbol)
-    so the same data can be selected in backtests as a different market
+    so the same data can be selected in backtests as a different market.
+
+    `symbol`/`target_symbol` accept a bare NSE/BSE ticker or a TradingView-style symbol
+    in addition to the internal BASE-QUOTE form.
     """
     from jesse.info import backtesting_exchanges
-    from jesse.exceptions import InvalidRoutes
 
     target_exchange = json_request.target_exchange.strip()
-    target_symbol = (json_request.target_symbol or json_request.symbol).strip().upper()
     if target_exchange not in backtesting_exchanges:
         return JSONResponse(
             {'error': f'{target_exchange!r} is not a backtesting-capable exchange'}, status_code=422
         )
+
     try:
-        # quote_asset() enforces Jesse's BASE-QUOTE symbol contract.
-        jh.quote_asset(target_symbol)
-    except InvalidRoutes as e:
+        symbol = normalize_symbol(json_request.exchange, json_request.symbol)
+        # target_symbol defaults to the (normalized) source symbol; it must still be
+        # normalized against target_exchange, not the source exchange, since a copy is
+        # often used to relabel a symbol across NSE/BSE.
+        target_symbol = normalize_symbol(target_exchange, json_request.target_symbol or symbol)
+    except exceptions.InvalidSymbol as e:
         return JSONResponse({'error': str(e)}, status_code=422)
 
     try:
         result = candle_repository.copy_candles(
             json_request.exchange,
-            json_request.symbol,
+            symbol,
             target_exchange,
             target_symbol,
             delete_source=json_request.delete_source,
@@ -267,7 +297,7 @@ def copy_candles(json_request: CopyCandlesRequestJson) -> JSONResponse:
 
     verb = 'Moved' if json_request.delete_source else 'Copied'
     return JSONResponse({
-        'message': f"{verb} {result['copied']} candles from {json_request.symbol} on {json_request.exchange} "
+        'message': f"{verb} {result['copied']} candles from {symbol} on {json_request.exchange} "
                    f"to {target_symbol} on {target_exchange}",
         'copied_count': result['copied'],
         'deleted_count': result['deleted'],

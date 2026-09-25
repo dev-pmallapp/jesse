@@ -66,7 +66,8 @@ metrics (smallest train→test degradation), among the strong performers.
 ### create_optimization_draft()
 Stages a draft you can then run.
 - `exchange` (default `"NSE"`)
-- `routes` — JSON string array of route objects
+- `routes` — JSON string array of route objects. `symbol` accepts a bare NSE/BSE ticker
+  (`RELIANCE`), `NSE:RELIANCE`, or the internal `RELIANCE-INR` form.
 - `data_routes` — JSON string array (default `"[]"`)
 - `training_start_date`, `training_finish_date` — `YYYY-MM-DD`
 - `testing_start_date`, `testing_finish_date` — `YYYY-MM-DD`

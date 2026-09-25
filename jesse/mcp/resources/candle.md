@@ -2,6 +2,10 @@
 
 This reference covers candle import and management operations in Jesse. This fork supports NSE and BSE (spot equity, daily bars only).
 
+## Symbol Format
+
+Every `symbol` parameter below accepts a bare NSE/BSE ticker (`RELIANCE`), the TradingView-style form (`NSE:RELIANCE`), or the internal `BASE-QUOTE` form (`RELIANCE-INR`) - all three resolve to the same symbol. A hyphenated ticker like `BAJAJ-AUTO` also works bare and normalizes to `BAJAJ_AUTO-INR`.
+
 ## Data Requirements
 
 Historical candle data is required for backtesting strategies. Import data for every route's exchange and symbol before running backtests.
