@@ -107,16 +107,27 @@ def get_universe_scan_options(request_json: UniverseScanOptionsRequestJson = Uni
             'universes': default_universes,
             'timeframe': '1D',
             'data_start': '2021-01-01',
+            # data_start + ~210 sessions of warm-up (~305 calendar days, plus slack for
+            # NSE holidays beyond plain weekends) - see the reference
+            # .jesse-project/universe_scan.py script's TRAIN_START comment.
             'train_start': '2021-11-15',
             'train_finish': '2024-12-31',
             'test_start': '2025-01-01',
             'test_finish': today,
+            # Every reference strategy's largest lookback (SMA 200 / Ichimoku 52+26)
+            # fits inside 210 sessions of warm-up.
             'warm_up_candles': 210,
             'balance': 1_000_000,
             'fee': 0.001,
             'run_fixed': True,
             'run_optimize': False,
+            # Keeps ~450 strategy x stock optimizations (per the reference script's
+            # universe/strategy list) tractable - raising it multiplies total runtime.
             'trials_per_hp': 20,
+            # Daily swing systems trade tens of times over a ~3 year TRAIN window, not
+            # hundreds - fitness.py scales its trade-count term by
+            # log10(trades)/log10(optimal_total), capped at 1, so this is the trade
+            # count considered "enough", not a hard minimum.
             'optimal_total': 30,
             'objective_function': 'sharpe',
             'cpu_cores': _default_cpu_cores(),
@@ -198,21 +209,12 @@ def start_universe_scan(request_json: UniverseScanStartRequestJson):
     except exceptions.InvalidSymbol as e:
         return JSONResponse({'error': 'bad_symbol', 'message': str(e)}, status_code=400)
 
-    running_id = storage.any_running()
-    if running_id:
-        return JSONResponse({
-            'error': 'scan_running',
-            'message': f'Universe scan {running_id} is already running.',
-        }, status_code=409)
-
+    # Validate the id itself (a caller-controlled value - see storage.is_safe_session_id's
+    # docstring) before touching any shared state, so a malformed id is always a 400
+    # regardless of whether a scan happens to be running right now.
     session_id = request_json.id or jh.generate_unique_id()
     if not storage.is_safe_session_id(session_id):
-        return JSONResponse({'error': 'bad_id', 'message': 'id must be a single path segment.'}, status_code=400)
-    if storage.read_session(session_id) is not None:
-        return JSONResponse({
-            'error': 'session_exists',
-            'message': f'Session {session_id} already exists.',
-        }, status_code=409)
+        return JSONResponse({'error': 'bad_id', 'message': 'id must match ^[A-Za-z0-9_-]{1,64}$.'}, status_code=400)
 
     config = {
         'exchange': request_json.exchange,
@@ -238,8 +240,27 @@ def start_universe_scan(request_json: UniverseScanStartRequestJson):
         'min_train_days': request_json.min_train_days,
     }
 
-    storage.create_session(session_id, config)
-    process_manager.add_task(run_universe_scan, session_id, config)
+    # Everything from here on (the "is one already running?" check, creating the
+    # session, and queuing the worker) must be atomic - otherwise two concurrent
+    # /start requests could both see "nothing running" and both launch a worker
+    # (TOCTOU). start_lock() serializes this across the whole process (and, via
+    # flock, across any number of server processes) - see its docstring.
+    with storage.start_lock():
+        running_id = storage.any_running()
+        if running_id:
+            return JSONResponse({
+                'error': 'scan_running',
+                'message': f'Universe scan {running_id} is already running.',
+            }, status_code=409)
+
+        if storage.read_session(session_id) is not None:
+            return JSONResponse({
+                'error': 'session_exists',
+                'message': f'Session {session_id} already exists.',
+            }, status_code=409)
+
+        storage.create_session(session_id, config)
+        process_manager.add_task(run_universe_scan, session_id, config)
 
     return JSONResponse({'id': session_id}, status_code=202)
 

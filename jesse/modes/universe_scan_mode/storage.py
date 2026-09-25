@@ -9,27 +9,89 @@ lives entirely as one `session.json` file under
 so a session can be inspected, copied, or deleted with plain filesystem tools, and
 `jesse run` needs no new Alembic/keewee migration to ship this feature.
 
-Concurrency note: only the scan worker process (one at a time - `/start` refuses a
-second concurrent scan, see `any_running()`) ever calls `update_session()`, and reads
-(the controller's `/session`/`/sessions`) only ever see a fully-written file because
-`_write_atomic()` writes to a temp file and `os.replace()`s it into place.
+Concurrency note: only the scan worker process (one at a time - `/start` takes
+`start_lock()` around its check-then-create-then-launch sequence, see that function
+and `any_running()`) ever calls `update_session()`, and reads (the controller's
+`/session`/`/sessions`) only ever see a fully-written file because `_write_atomic()`
+writes to a temp file and `os.replace()`s it into place. A 'running' session whose
+worker has actually died (crash, or the whole server got SIGKILLed) does not stay
+'running' forever: `read_session()`/`list_sessions()` opportunistically reconcile it
+whenever the worker's own recorded pid has died (`_reconcile_pid_only()`, no Redis
+needed), and `is_running()`/`any_running()` - the controller's actual gating checks for
+`/start` and `/delete` - additionally cover the brief pid-less window via the Redis
+'active worker' marker (`_worker_alive()`). Either way this is a lazy, read-time
+correction, not a live guarantee.
 """
 import json
 import os
+import re
 import shutil
 import tempfile
+from contextlib import contextmanager
 from typing import Optional
 
 import jesse.helpers as jh
 
+try:
+    import fcntl
+except ImportError:  # Windows has no fcntl; CI's Windows job falls back to no locking
+    fcntl = None
+
 SESSIONS_ROOT = 'storage/universe-scans'
+
+# `/start` lets the caller pick the id, and it ends up in `session_dir()`/`session_path()`
+# (filesystem paths) and, unescaped, in the page's DOM (see universe_scan_page/index.html's
+# running-indicator) - so it must be restricted to a small, inert charset rather than just
+# "no path separators". Generated ids are `jh.generate_unique_id()` (a uuid4, e.g.
+# '550e8400-e29b-41d4-a716-446655440000'), which fits comfortably inside this pattern.
+_SESSION_ID_RE = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
+
+# Guards the check-then-create-then-launch sequence in `/start` (see `start_lock()`).
+_START_LOCK_PATH = os.path.join(SESSIONS_ROOT, '.start.lock')
+
+
+class SessionNotFoundError(Exception):
+    """Raised by `update_session()` when the session directory was deleted (e.g. via
+    `/delete`) while something still held a reference to the id - signals the caller
+    to stop, rather than have `update_session()` silently recreate a bare
+    `{'id': session_id}` file that would resurrect a session the user explicitly removed.
+    """
 
 
 def is_safe_session_id(session_id: str) -> bool:
-    """A session id must be a single path component, so it can never be used to
-    escape SESSIONS_ROOT via '..' or an embedded '/'.
+    """A session id must match `_SESSION_ID_RE`: this both keeps it a single path
+    component (so it can never escape SESSIONS_ROOT via '..' or an embedded '/') and
+    restricts it to characters that are inert wherever an id is echoed back verbatim -
+    the filesystem, JSON responses, and the page's DOM.
     """
-    return bool(session_id) and os.path.basename(session_id) == session_id and session_id not in ('.', '..')
+    return bool(_SESSION_ID_RE.match(session_id or ''))
+
+
+@contextmanager
+def start_lock():
+    """Exclusive lock around `/start`'s check-then-create-then-launch sequence, so two
+    concurrent requests can't both observe "nothing running" (`any_running()`) and both
+    launch a worker - a plain read-then-write in the controller would otherwise TOCTOU
+    race. Uses an flock'd lock file rather than an in-process lock because
+    `process_manager`'s "one running scan" state (Redis + the filesystem) is already
+    shared across any number of server processes/workers.
+
+    Windows has no `fcntl`; there this is a no-op context manager, so the "one scan at
+    a time" guarantee on Windows relies solely on the (non-atomic) check-then-create in
+    the controller, same as before this fix - acceptable because Windows isn't a
+    supported deployment target for `jesse run`, only a CI correctness check.
+    """
+    os.makedirs(SESSIONS_ROOT, exist_ok=True)
+    if fcntl is None:
+        yield
+        return
+    fd = os.open(_START_LOCK_PATH, os.O_CREAT | os.O_RDWR)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
 
 
 def session_dir(session_id: str) -> str:
@@ -83,7 +145,11 @@ def create_session(session_id: str, config: dict) -> dict:
     return session
 
 
-def read_session(session_id: str) -> Optional[dict]:
+def _read_raw(session_id: str) -> Optional[dict]:
+    """`session.json` exactly as stored, with no liveness reconciliation - used by
+    `update_session()` so a read-modify-write never triggers (or races with) the
+    reconciliation side-effect that `read_session()` performs.
+    """
     path = session_path(session_id)
     if not os.path.exists(path):
         return None
@@ -91,13 +157,46 @@ def read_session(session_id: str) -> Optional[dict]:
         return json.load(f)
 
 
+def read_session(session_id: str) -> Optional[dict]:
+    """`session.json`, lazily reconciled via `_reconcile_pid_only()` so a 'running'
+    session whose worker recorded a pid that has since died never reads back as
+    'running' forever. This is the cheap, offline-only half of reconciliation - see
+    `is_running()`/`_worker_alive()` for the authoritative check (which also covers
+    the pid-less window via the Redis marker) that gates `/start` and `/delete`.
+    """
+    session = _read_raw(session_id)
+    if session is None:
+        return None
+    return _reconcile_pid_only(session)
+
+
 def update_session(session_id: str, **updates) -> dict:
-    """Read-modify-write the session file with a shallow merge of `updates`."""
-    session = read_session(session_id) or {'id': session_id}
+    """Read-modify-write the session file with a shallow merge of `updates`.
+
+    Raises `SessionNotFoundError` if the session directory no longer exists (e.g. it
+    was deleted via `/delete` while a worker still held the id) instead of silently
+    recreating a bare `{'id': session_id}` file - callers (namely `run()`) must treat
+    that as "stop now", not "start a session from scratch".
+    """
+    session = _read_raw(session_id)
+    if session is None:
+        raise SessionNotFoundError(session_id)
     session.update(updates)
     session['updated_at'] = jh.now_to_datetime().isoformat()
     _write_atomic(session_id, session)
     return session
+
+
+def mark_worker_started(session_id: str, pid: int) -> None:
+    """Record the worker's OS pid in `session.json`, called by `run()` as close to its
+    first line as possible. This is what lets `is_running()` tell a genuinely running
+    scan apart from a stale 'running' status left by a worker that died without
+    updating its own session (SIGKILL, OOM kill, or the whole `jesse run` server being
+    killed) - the Redis 'active worker' marker in `services/multiprocessing.py` is only
+    cleared by that same server process's cleanup thread, so it does not, by itself,
+    survive a hard kill of the server.
+    """
+    update_session(session_id, worker_pid=pid)
 
 
 def request_cancel(session_id: str) -> None:
@@ -121,7 +220,13 @@ def delete_session(session_id: str) -> bool:
 
 
 def list_sessions() -> list:
-    """Every session's full JSON, newest first by `updated_at`."""
+    """Every session's full JSON, newest first by `updated_at`. Goes through
+    `read_session()`, so a listing reconciles any 'running' session whose recorded pid
+    has died (see `_reconcile_pid_only()`) - but, deliberately, does not perform the
+    Redis-backed check for sessions with no pid recorded yet, so listing every session
+    never depends on Redis being reachable/configured (`is_running()`/`any_running()`
+    still do that check where it matters: gating `/start` and `/delete`).
+    """
     if not os.path.isdir(SESSIONS_ROOT):
         return []
     sessions = []
@@ -135,32 +240,121 @@ def list_sessions() -> list:
     return sessions
 
 
-def is_running(session_id: str) -> bool:
-    """True only when `session_id` is marked 'running' AND its worker process is
-    actually still registered active - reconciles a 'running' status a crashed worker
-    or server restart could otherwise leave behind forever (same idea as
-    `services/transformers.py`'s live-session status reconciliation).
+def _pid_alive(pid: int) -> bool:
+    """Best-effort 'is this OS pid still alive' check with no extra dependency -
+    psutil isn't a jesse dependency (not in requirements.txt/setup.py) and isn't
+    installed in this project's venv, so it can't be used here without adding one.
+
+    This does not verify the process's identity (e.g. via its start time), only that
+    *some* process holds `pid` - psutil-free portable code can't read a process's
+    start time on every platform without it. In the rare case the OS has already
+    recycled `pid` for an unrelated process, this can delay noticing a dead worker
+    until that unrelated process also exits; it can never make a genuinely running
+    worker look dead, which is the failure mode that matters here (a false 'dead'
+    would flip a live scan to 'error' out from under it).
     """
-    session = read_session(session_id)
-    if not session or session.get('status') != 'running':
+    if not pid:
         return False
+    if os.name == 'nt':
+        import ctypes
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return False
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # Exists but owned by someone else (unexpected here - the worker is our own
+        # child - but "exists" is still the correct answer) rather than "dead".
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _reconcile_pid_only(session: dict) -> dict:
+    """Read/list-path reconciliation: only ever consults the worker's own recorded
+    pid via `_pid_alive()` - cheap, local, and can never touch Redis or raise - so a
+    plain `/session` or `/sessions` read never depends on infrastructure beyond the
+    session file itself. A 'running' session with no pid recorded yet (the brief
+    window before `run()` reaches `mark_worker_started()`) is left alone here;
+    `is_running()`/`any_running()` (the controller's actual gating checks for
+    `/start`'s "one scan at a time" and `/delete`'s "can't delete a running scan")
+    additionally consult the Redis marker for that window - see `_worker_alive()`.
+    """
+    if session.get('status') != 'running':
+        return session
+    pid = session.get('worker_pid')
+    if pid is None or _pid_alive(pid):
+        return session
+    try:
+        return update_session(session['id'], status='error', error='worker process ended unexpectedly')
+    except SessionNotFoundError:
+        # Deleted out from under us between the raw read and this write - nothing left
+        # to reconcile.
+        return session
+
+
+def _worker_alive(session: dict) -> bool:
+    """Authoritative liveness of `session`'s worker, from an already-loaded session
+    dict (never re-reads the file). Prefers the worker's own recorded pid (works fully
+    offline, no Redis needed); when no pid is recorded yet - the brief
+    `create_session()`..`mark_worker_started()` window - falls back to the Redis
+    'active worker' marker `process_manager.add_task()` sets before starting the child.
+
+    That fallback is guarded: if the Redis client is unavailable/unconfigured (e.g.
+    running outside a jesse project, as in tests) or the call otherwise fails, there is
+    no way to prove the worker is alive - and treating "can't tell" as "assume still
+    running" would let a single Redis hiccup wedge "one scan at a time" forever (every
+    future `/start` would keep 409ing). Instead this treats it the same as "dead", so
+    the caller reconciles the stale 'running' status away instead of blocking forever.
+    """
+    pid = session.get('worker_pid')
+    if pid is not None:
+        return _pid_alive(pid)
     from jesse.services.multiprocessing import process_manager
-    return session_id in process_manager.active_workers
+    try:
+        return session['id'] in process_manager.active_workers
+    except Exception as e:  # noqa: BLE001 - any Redis failure must degrade, not crash the request
+        jh.debug(f"universe-scan {session.get('id')}: could not check worker liveness ({type(e).__name__}: {e}); treating as not running")
+        return False
+
+
+def is_running(session_id: str) -> bool:
+    """True only when `session_id`'s session is marked 'running' AND `_worker_alive()`
+    confirms it. This is the authoritative check the controller gates `/start`'s "one
+    scan at a time" rule and `/delete`'s "can't delete a running scan" rule on, so -
+    unlike `read_session()`'s cheaper pid-only pass - it also reconciles the pid-less
+    window via `_worker_alive()`'s Redis fallback, persisting 'error' immediately when
+    the worker turns out to be dead so a crash can't permanently block new scans with a
+    false 409.
+    """
+    session = _read_raw(session_id)
+    if session is None or session.get('status') != 'running':
+        return False
+    if _worker_alive(session):
+        return True
+    try:
+        update_session(session_id, status='error', error='worker process ended unexpectedly')
+    except SessionNotFoundError:
+        pass
+    return False
 
 
 def any_running() -> Optional[str]:
-    """Id of a currently-running scan, or None. Reconciles (and persists) a stale
-    'running' status left behind by a crashed/killed worker so one crash doesn't
-    permanently block new scans with a false 409.
+    """Id of a currently-running scan, or None. Deliberately calls `is_running()` (not
+    just trusting `list_sessions()`'s cheaper pid-only reconciliation) for every
+    candidate, so a session stuck in the pid-less window is reconciled here too instead
+    of permanently blocking every future `/start`. Callers that need "and nobody else
+    can start one while I check" must call this from inside `start_lock()`.
     """
     for session in list_sessions():
         if session.get('status') != 'running':
             continue
         if is_running(session['id']):
             return session['id']
-        update_session(
-            session['id'],
-            status='error',
-            error='Worker process is no longer running (crashed, or the app restarted).',
-        )
     return None

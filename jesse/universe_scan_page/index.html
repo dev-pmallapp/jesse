@@ -492,6 +492,12 @@
     var errEl = document.getElementById('start-error');
     errEl.classList.add('hidden');
 
+    var startBtn = document.getElementById('start-btn');
+    // Guard against a double-click racing the server's own check-then-create lock
+    // (storage.start_lock()) - not strictly required for correctness any more, but
+    // avoids firing a second, guaranteed-409 request while the first is in flight.
+    startBtn.disabled = true;
+
     var payload = {
       exchange: document.getElementById('f-exchange').value,
       universes: checkedValues('#universe-list input'),
@@ -517,6 +523,7 @@
     };
 
     api('/universe-scan/start', payload).then(function (r) {
+      startBtn.disabled = false;
       if (!r.ok) {
         errEl.textContent = (r.data && r.data.message) || 'Failed to start scan.';
         errEl.classList.remove('hidden');
@@ -524,6 +531,10 @@
       }
       openSession(r.data.id);
       loadSessionsList();
+    }).catch(function () {
+      startBtn.disabled = false;
+      errEl.textContent = 'Could not reach the server.';
+      errEl.classList.remove('hidden');
     });
   });
 
@@ -560,7 +571,14 @@
 
     if (session.status === 'running') {
       progressCard.classList.remove('hidden');
-      runningIndicator.innerHTML = '<span class="pill running">running: ' + session.id + '</span>';
+      // session.id is server/user-controlled (see UniverseScanStartRequestJson.id) -
+      // build the pill via textContent, never innerHTML string concatenation, so a
+      // crafted id can't inject markup here.
+      runningIndicator.textContent = '';
+      var pill = document.createElement('span');
+      pill.className = 'pill running';
+      pill.textContent = 'running: ' + session.id;
+      runningIndicator.appendChild(pill);
       var p = session.progress || {};
       var pct = p.total ? Math.round(100 * p.done / p.total) : 0;
       document.getElementById('progress-bar').style.width = pct + '%';
@@ -570,7 +588,7 @@
         (p.current ? '  |  current: ' + p.current : '');
     } else {
       progressCard.classList.add('hidden');
-      runningIndicator.innerHTML = '';
+      runningIndicator.textContent = '';
     }
 
     resultsCard.classList.remove('hidden');
@@ -752,8 +770,15 @@
     var columns = rowColumns(rows);
     var esc = function (v) {
       if (v === undefined || v === null) return '';
+      // Numeric cells (e.g. a negative pnl_pct) must stay numbers, not get a
+      // formula-injection guard quote prepended just for starting with '-'.
+      var isNumber = typeof v === 'number';
       if (typeof v === 'object') v = JSON.stringify(v);
       v = String(v);
+      // Excel/Sheets treat a cell starting with =, +, -, @, or a leading tab/CR as a
+      // formula to execute on open - prefix with a single quote to force it to stay
+      // literal text (CSV formula injection). Only applies to non-numeric cells.
+      if (!isNumber && /^[=+\-@\t\r]/.test(v)) v = "'" + v;
       return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
     };
     var lines = [columns.join(',')];

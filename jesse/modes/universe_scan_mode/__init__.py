@@ -19,6 +19,7 @@ inside `run()`'s body (or deeper), never at this file's top level. `jesse.resear
 itself is safe to import here: `research.universe`/`research.list_universes` already
 lazy-import India only when actually called (see jesse/research/universes.py).
 """
+import os
 import traceback
 from datetime import datetime
 from multiprocessing import cpu_count
@@ -89,6 +90,11 @@ def run(session_id: str, config: dict) -> None:
     rows: list = []
     ray_started_here = False
     try:
+        # As close to this function's first line as possible: lets storage.is_running()/
+        # any_running() tell a genuinely running scan apart from a stale 'running' left by
+        # a worker that died without updating its own session (see storage.py's docstring).
+        storage.mark_worker_started(session_id, os.getpid())
+
         jh.debug(f'universe-scan {session_id}: resolving {len(universes)} universe(s) + {len(explicit_symbols)} symbol(s)')
         universe_symbol_lists, universe_used_current = {}, {}
         for name in universes:
@@ -246,9 +252,18 @@ def run(session_id: str, config: dict) -> None:
             progress={'phase': phases[-1] if phases else None, 'done': done_units, 'total': total_units, 'current': None},
         )
         jh.debug(f'universe-scan {session_id}: {status} ({done_units}/{total_units} units)')
+    except storage.SessionNotFoundError:
+        # The session directory was deleted (e.g. via /delete) while this worker was
+        # still writing to it - stop quietly instead of resurrecting a bare
+        # session.json for an id the user explicitly removed (see update_session()'s
+        # docstring). Treated as a clean stop, not an error.
+        jh.debug(f'universe-scan {session_id}: session was deleted; stopping')
     except Exception as e:
         jh.debug(f'universe-scan {session_id} failed: {traceback.format_exc()}')
-        storage.update_session(session_id, status='error', error=f'{type(e).__name__}: {e}', rows=rows, summary=summarize(rows))
+        try:
+            storage.update_session(session_id, status='error', error=f'{type(e).__name__}: {e}', rows=rows, summary=summarize(rows))
+        except storage.SessionNotFoundError:
+            pass
     finally:
         # Shut down the shared Ray cluster on every exit path (success, error, or
         # cancellation) - never leave a lingering cluster from a killed/failed scan.

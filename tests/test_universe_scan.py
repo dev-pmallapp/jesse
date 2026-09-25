@@ -306,3 +306,93 @@ def test_start_rejects_second_concurrent_scan(app_client, monkeypatch):
     second = app_client.post('/universe-scan/start', json=_valid_payload(id='second-scan'))
     assert second.status_code == 409
     assert second.json()['error'] == 'scan_running'
+
+
+def test_get_session_returns_404_for_unknown_id(app_client):
+    response = app_client.post('/universe-scan/session', json={'id': 'does-not-exist'})
+    assert response.status_code == 404
+    assert response.json()['error'] == 'not_found'
+
+
+def test_get_session_rejects_path_traversal_id(app_client):
+    response = app_client.post('/universe-scan/session', json={'id': '../escape'})
+    assert response.status_code == 400
+    assert response.json()['error'] == 'bad_id'
+
+
+def test_cancel_returns_404_for_unknown_id(app_client):
+    response = app_client.post('/universe-scan/cancel', json={'id': 'does-not-exist'})
+    assert response.status_code == 404
+    assert response.json()['error'] == 'not_found'
+
+
+def test_delete_rejects_path_traversal_id(app_client):
+    response = app_client.post('/universe-scan/delete', json={'id': 'a/b'})
+    assert response.status_code == 400
+    assert response.json()['error'] == 'bad_id'
+
+
+def test_delete_refuses_a_running_session(app_client, monkeypatch):
+    started = app_client.post('/universe-scan/start', json=_valid_payload(id='running-scan'))
+    assert started.status_code == 202
+
+    process_manager_module = import_module('jesse.services.multiprocessing')
+    monkeypatch.setattr(
+        process_manager_module.ProcessManager, 'active_workers',
+        property(lambda self: {'running-scan'}),
+    )
+
+    response = app_client.post('/universe-scan/delete', json={'id': 'running-scan'})
+    assert response.status_code == 409
+    assert response.json()['error'] == 'scan_running'
+    # Refused delete must leave the session file in place.
+    assert storage.read_session('running-scan') is not None
+
+
+def test_sessions_endpoint_lists_newest_first(app_client, monkeypatch):
+    # No worker really starts here, so an empty active-workers set keeps /start's
+    # "one scan at a time" check off Redis; 'older' is finished before 'newer' starts
+    # because that check (correctly) 409s a second start while one is running.
+    process_manager_module = import_module('jesse.services.multiprocessing')
+    monkeypatch.setattr(
+        process_manager_module.ProcessManager, 'active_workers',
+        property(lambda self: set()),
+    )
+
+    assert app_client.post('/universe-scan/start', json=_valid_payload(id='older')).status_code == 202
+    storage.update_session('older', status='done', updated_at='2020-01-01T00:00:00')
+    assert app_client.post('/universe-scan/start', json=_valid_payload(id='newer')).status_code == 202
+    storage.update_session('newer', status='done', updated_at='2030-01-01T00:00:00')
+
+    response = app_client.post('/universe-scan/sessions')
+    assert response.status_code == 200
+    ids = [s['id'] for s in response.json()['sessions']]
+    assert ids == ['newer', 'older']
+
+
+def test_universe_scan_post_routes_require_auth(tmp_path, monkeypatch):
+    """The router's `dependencies=[Depends(require_auth)]` must reject every POST
+    route when no (or a wrong) Authorization header is sent - independent of the
+    `app_client` fixture, which always attaches a valid one."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setitem(auth.ENV_VALUES, 'PASSWORD', PASSWORD)
+    monkeypatch.setattr(universe_scan_controller.jh, 'validate_cwd', lambda: None)
+
+    app = FastAPI()
+    app.include_router(universe_scan_controller.router)
+    unauthenticated_client = TestClient(app)
+
+    response = unauthenticated_client.post('/universe-scan/sessions')
+    assert response.status_code == 401
+
+
+def test_get_universe_scan_page_serves_html_without_auth():
+    """`GET /universe-scan` is registered directly on the shared `fastapi_app` (not
+    the auth-gated router) - see `jesse/__init__.py` - so the standalone page loads
+    with no Authorization header at all."""
+    from jesse.services.web import fastapi_app
+
+    client = TestClient(fastapi_app)
+    response = client.get('/universe-scan')
+    assert response.status_code == 200
+    assert 'text/html' in response.headers['content-type']
