@@ -1009,11 +1009,6 @@ def _timestamp_simulator(
     # Preserve Jesse's historical first sample after the first 1,440 source
     # minutes, then keep a fixed daily schedule across market closures.
     next_balance_sample_time = common_start + 86_460_000
-    balance_sample_cadence = (
-        _calculate_minimum_candle_step() * 60_000
-        if fast_mode
-        else 60_000
-    )
     progressbar = Progressbar(len(events), step=420)
     last_update_time = None
     routes_info = sorted(
@@ -1038,12 +1033,12 @@ def _timestamp_simulator(
             while batch_end < len(events) - 1:
                 if _timestamp_event_updates_trading_route(events[batch_end], candles, trading_routes):
                     break
-                event_time = int(events[batch_end]['time'])
-                is_balance_sample_event = (
-                    event_time >= next_balance_sample_time
-                    and (event_time - common_start) % balance_sample_cadence == 0
-                )
-                if is_balance_sample_event:
+                # Stop the batch on the event that will land on/past the next
+                # scheduled sample so it becomes the batch endpoint and
+                # `store.app.time` (set from this event, see
+                # `_apply_timestamp_replay_batch`) triggers the sample below -
+                # same quantity the post-apply check uses.
+                if int(events[batch_end]['time']) >= next_balance_sample_time:
                     break
                 batch_end += 1
 
@@ -1076,12 +1071,11 @@ def _timestamp_simulator(
             order_service.update_active_orders(exchange, symbol)
         order_service.execute_simulated_market_orders()
 
-        # Fast requests historically sampled equity only at skip boundaries.
-        # Keep that result compatibility while decisions retain exact timestamp boundaries.
-        is_balance_sample_event = (
-            (int(store.app.time) - common_start) % balance_sample_cadence == 0
-        )
-        if int(store.app.time) >= next_balance_sample_time and is_balance_sample_event:
+        # Timestamp replay samples equity on the same daily schedule in both
+        # modes so fast and step runs report identical metrics; a skip-boundary
+        # modulo never matches sources whose rows sit at a fixed intraday clock
+        # time (e.g. NSE/BSE session rows all landing at 09:59 UTC).
+        if int(store.app.time) >= next_balance_sample_time:
             save_daily_portfolio_balance()
             while next_balance_sample_time <= int(store.app.time):
                 next_balance_sample_time += 86_400_000
