@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jesse - Universe Scan</title>
+<style>
+  /* Light/dark via prefers-color-scheme only - no toggle, no external assets, no build step. */
+  :root {
+    --bg: #f4f5f7;
+    --fg: #1a1a1a;
+    --card: #ffffff;
+    --border: #d9dbe1;
+    --muted: #667085;
+    --accent: #2563eb;
+    --accent-fg: #ffffff;
+    --danger: #dc2626;
+    --danger-fg: #ffffff;
+    --success: #16a34a;
+    --warn-bg: #fff4ce;
+    --warn-fg: #7a5b00;
+    --warn-border: #e8c766;
+    --row-hover: #eef1f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1014;
+      --fg: #e6e8eb;
+      --card: #171a20;
+      --border: #2b2f38;
+      --muted: #9aa3af;
+      --accent: #3b82f6;
+      --accent-fg: #0b0d10;
+      --danger: #f87171;
+      --danger-fg: #250505;
+      --success: #4ade80;
+      --warn-bg: #3a300a;
+      --warn-fg: #f5d876;
+      --warn-border: #6b5613;
+      --row-hover: #1f232b;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 14px;
+  }
+  a { color: var(--accent); }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 20px; margin: 0; }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+  h3 { font-size: 13px; margin: 0 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+  header.top {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--card);
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px; margin-bottom: 14px;
+  }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 16px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+  input[type=text], input[type=number], input[type=date], input[type=password], select, textarea {
+    width: 100%; padding: 7px 8px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--fg); font-size: 13px;
+  }
+  textarea { min-height: 60px; font-family: monospace; resize: vertical; }
+  .field { margin-bottom: 10px; }
+  .checkbox-row { display: flex; align-items: center; gap: 6px; }
+  .checkbox-row label { margin: 0; color: var(--fg); font-size: 13px; }
+  .chip-list { display: flex; flex-wrap: wrap; gap: 6px 14px; max-height: 160px; overflow-y: auto;
+    border: 1px solid var(--border); border-radius: 6px; padding: 8px; background: var(--bg); }
+  .chip-list label { display: flex; align-items: center; gap: 5px; color: var(--fg); font-size: 13px; margin: 0; white-space: nowrap; }
+  button {
+    cursor: pointer; border: 1px solid var(--border); background: var(--card); color: var(--fg);
+    padding: 7px 14px; border-radius: 6px; font-size: 13px;
+  }
+  button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600; }
+  button.danger { background: var(--danger); color: var(--danger-fg); border-color: var(--danger); }
+  button.small { padding: 3px 9px; font-size: 12px; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.link { background: none; border: none; color: var(--accent); padding: 0; text-decoration: underline; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .spread { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .muted { color: var(--muted); }
+  .error-text { color: var(--danger); font-size: 13px; margin-top: 6px; }
+  .banner-warn {
+    background: var(--warn-bg); color: var(--warn-fg); border: 1px solid var(--warn-border);
+    border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; font-size: 13px;
+  }
+  .progress-bar-outer { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; height: 16px; overflow: hidden; }
+  .progress-bar-inner { background: var(--accent); height: 100%; transition: width .3s ease; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 6px; }
+  table { border-collapse: collapse; width: 100%; min-width: 480px; }
+  th, td { padding: 6px 10px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; font-size: 12.5px; }
+  th { cursor: pointer; user-select: none; color: var(--muted); position: sticky; top: 0; background: var(--card); }
+  th.sorted::after { content: ' \2195'; }
+  tbody tr:hover { background: var(--row-hover); }
+  tr.beat-bh { color: var(--success); }
+  tr.row-error td { color: var(--danger); }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; border: 1px solid var(--border); }
+  .pill.running { color: var(--accent); border-color: var(--accent); }
+  .pill.done { color: var(--success); border-color: var(--success); }
+  .pill.error, .pill.cancelled { color: var(--danger); border-color: var(--danger); }
+  #login-view { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .login-card { width: 280px; }
+  .hidden { display: none !important; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .toolbar input[type=text] { width: 220px; }
+  footer.note { color: var(--muted); font-size: 11px; margin-top: 30px; text-align: center; }
+</style>
+</head>
+<body>
+
+<div id="login-view">
+  <div class="card login-card">
+    <h2>Jesse - Universe Scan</h2>
+    <div class="field">
+      <label for="login-password">Password</label>
+      <input type="password" id="login-password" autocomplete="current-password">
+    </div>
+    <button class="primary" id="login-btn" style="width:100%">Log in</button>
+    <div class="error-text hidden" id="login-error"></div>
+  </div>
+</div>
+
+<div id="app-view" class="hidden">
+  <header class="top">
+    <h1>Universe Scan</h1>
+    <div class="row">
+      <span class="muted" id="running-indicator"></span>
+      <button class="small" id="logout-btn">Log out</button>
+    </div>
+  </header>
+
+  <div class="wrap">
+
+    <div class="card" id="form-card">
+      <div class="spread">
+        <h2>New scan</h2>
+        <button class="small" id="refresh-options-btn">Reload options</button>
+      </div>
+
+      <div class="grid">
+        <div class="field">
+          <label for="f-exchange">Exchange</label>
+          <select id="f-exchange">
+            <option value="NSE">NSE</option>
+            <option value="BSE">BSE</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="f-timeframe">Timeframe</label>
+          <select id="f-timeframe"></select>
+        </div>
+        <div class="field">
+          <label for="f-warmup">Warm-up candles</label>
+          <input type="number" id="f-warmup" value="210" min="0">
+        </div>
+        <div class="field">
+          <label for="f-balance">Starting balance</label>
+          <input type="number" id="f-balance" value="1000000" min="0">
+        </div>
+        <div class="field">
+          <label for="f-fee">Fee (fraction, e.g. 0.001)</label>
+          <input type="number" id="f-fee" value="0.001" step="0.0001" min="0">
+        </div>
+        <div class="field">
+          <label for="f-cpu">CPU cores (optimize phase)</label>
+          <input type="number" id="f-cpu" min="1" value="1">
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="field">
+          <label for="f-data-start">Data start (warm-up source)</label>
+          <input type="date" id="f-data-start">
+        </div>
+        <div class="field">
+          <label for="f-train-start">Train start</label>
+          <input type="date" id="f-train-start">
+        </div>
+        <div class="field">
+          <label for="f-train-finish">Train finish</label>
+          <input type="date" id="f-train-finish">
+        </div>
+        <div class="field">
+          <label for="f-test-start">Test start</label>
+          <input type="date" id="f-test-start">
+        </div>
+        <div class="field">
+          <label for="f-test-finish">Test finish</label>
+          <input type="date" id="f-test-finish">
+        </div>
+        <div class="field">
+          <label for="f-min-train-days">Min train days</label>
+          <input type="number" id="f-min-train-days" value="365" min="1">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Universes</label>
+        <div class="chip-list" id="universe-list"></div>
+      </div>
+
+      <div class="field">
+        <label for="f-symbols">Extra symbols (one per line or comma-separated - bare tickers OK, e.g. RELIANCE, TCS)</label>
+        <textarea id="f-symbols"></textarea>
+      </div>
+
+      <div class="field">
+        <div class="spread">
+          <label style="margin:0">Strategies</label>
+          <span class="row">
+            <button class="small" id="strategies-all-btn">Select all</button>
+            <button class="small" id="strategies-none-btn">Select none</button>
+          </span>
+        </div>
+        <div class="chip-list" id="strategy-list"></div>
+      </div>
+
+      <div class="grid">
+        <div class="field checkbox-row">
+          <input type="checkbox" id="f-run-fixed" checked>
+          <label for="f-run-fixed">Run fixed (default hyperparameters)</label>
+        </div>
+        <div class="field checkbox-row">
+          <input type="checkbox" id="f-run-optimize">
+          <label for="f-run-optimize">Run optimize (per stock)</label>
+        </div>
+        <div class="field checkbox-row">
+          <input type="checkbox" id="f-import-candles">
+          <label for="f-import-candles">Import/refresh candles first</label>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="field">
+          <label for="f-trials">Trials per hyperparameter</label>
+          <input type="number" id="f-trials" value="20" min="1">
+        </div>
+        <div class="field">
+          <label for="f-optimal-total">Optimal total (trade-count normalisation)</label>
+          <input type="number" id="f-optimal-total" value="30" min="1">
+        </div>
+        <div class="field">
+          <label for="f-objective">Objective function</label>
+          <select id="f-objective">
+            <option value="sharpe">sharpe</option>
+            <option value="calmar">calmar</option>
+            <option value="sortino">sortino</option>
+            <option value="omega">omega</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row">
+        <button class="primary" id="start-btn">Start scan</button>
+        <span class="error-text hidden" id="start-error"></span>
+      </div>
+    </div>
+
+    <div class="card hidden" id="progress-card">
+      <div class="spread">
+        <h2>Progress - <span id="progress-session-id" class="muted"></span></h2>
+        <button class="danger small" id="cancel-btn">Cancel</button>
+      </div>
+      <div class="progress-bar-outer"><div class="progress-bar-inner" id="progress-bar" style="width:0%"></div></div>
+      <p class="muted" id="progress-text"></p>
+    </div>
+
+    <div class="card hidden" id="results-card">
+      <div class="spread">
+        <h2>Results - <span id="results-session-id" class="muted"></span></h2>
+        <button class="small" id="download-csv-btn">Download rows CSV</button>
+      </div>
+
+      <div class="banner-warn hidden" id="survivorship-banner"></div>
+
+      <div id="skipped-wrap" class="hidden">
+        <h3>Skipped symbols</h3>
+        <div class="table-wrap" style="margin-bottom:14px">
+          <table><thead><tr><th>Symbol</th><th>Reason</th></tr></thead><tbody id="skipped-body"></tbody></table>
+        </div>
+      </div>
+
+      <div id="summary-wrap"></div>
+
+      <h3>Detail rows</h3>
+      <div class="toolbar">
+        <select id="filter-phase"><option value="">All phases</option></select>
+        <select id="filter-strategy"><option value="">All strategies</option></select>
+        <input type="text" id="filter-symbol" placeholder="Filter by symbol...">
+      </div>
+      <div class="table-wrap">
+        <table id="rows-table">
+          <thead><tr id="rows-head"></tr></thead>
+          <tbody id="rows-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="spread">
+        <h2>Past sessions</h2>
+        <button class="small" id="refresh-sessions-btn">Refresh</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Created</th><th>Status</th><th>Progress</th><th>Universes</th><th>Strategies</th><th>Rows</th><th>Actions</th></tr></thead>
+          <tbody id="sessions-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <footer class="note">Universe scan is a research tool - past-window backtests, not a live trading recommendation.</footer>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var TOKEN_KEY = 'universe_scan_auth_token';
+  var state = {
+    options: null,
+    session: null,      // full session.json of the session currently shown
+    pollTimer: null,
+    sortKey: null,
+    sortDir: 1,
+  };
+
+  // ---------------------------------------------------------------- auth --
+
+  function getToken() { return sessionStorage.getItem(TOKEN_KEY); }
+  function setToken(t) { sessionStorage.setItem(TOKEN_KEY, t); }
+  function clearToken() { sessionStorage.removeItem(TOKEN_KEY); }
+
+  function api(path, body) {
+    return fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': getToken() || '' },
+      body: JSON.stringify(body || {}),
+    }).then(function (res) {
+      if (res.status === 401) {
+        showLogin('Session expired - please log in again.');
+        throw new Error('unauthorized');
+      }
+      return res.json().then(function (data) { return { ok: res.ok, status: res.status, data: data }; });
+    });
+  }
+
+  function showLogin(message) {
+    clearToken();
+    stopPolling();
+    document.getElementById('app-view').classList.add('hidden');
+    document.getElementById('login-view').classList.remove('hidden');
+    var err = document.getElementById('login-error');
+    if (message) { err.textContent = message; err.classList.remove('hidden'); }
+    else { err.classList.add('hidden'); }
+  }
+
+  function showApp() {
+    document.getElementById('login-view').classList.add('hidden');
+    document.getElementById('app-view').classList.remove('hidden');
+    loadOptions();
+    loadSessionsList();
+  }
+
+  document.getElementById('login-btn').addEventListener('click', function () {
+    var password = document.getElementById('login-password').value;
+    fetch('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: password }),
+    }).then(function (res) { return res.json().then(function (data) { return { ok: res.ok, data: data }; }); })
+      .then(function (r) {
+        if (r.ok && r.data.auth_token) {
+          setToken(r.data.auth_token);
+          showApp();
+        } else {
+          document.getElementById('login-error').textContent = r.data.message || 'Invalid password';
+          document.getElementById('login-error').classList.remove('hidden');
+        }
+      })
+      .catch(function () {
+        document.getElementById('login-error').textContent = 'Could not reach the server.';
+        document.getElementById('login-error').classList.remove('hidden');
+      });
+  });
+
+  document.getElementById('login-password').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') document.getElementById('login-btn').click();
+  });
+
+  document.getElementById('logout-btn').addEventListener('click', function () { showLogin(); });
+
+  // ------------------------------------------------------------- options --
+
+  function loadOptions() {
+    api('/universe-scan/options', { exchange: document.getElementById('f-exchange').value || 'NSE' })
+      .then(function (r) {
+        if (!r.ok) return;
+        state.options = r.data;
+        populateOptions(r.data);
+      });
+  }
+
+  function populateOptions(o) {
+    // Timeframe select
+    var tf = document.getElementById('f-timeframe');
+    tf.innerHTML = '';
+    (o.timeframes || ['1D', '1W']).forEach(function (t) {
+      var opt = document.createElement('option'); opt.value = t; opt.textContent = t; tf.appendChild(opt);
+    });
+    if (o.defaults && o.defaults.timeframe) tf.value = o.defaults.timeframe;
+
+    // Universe checkboxes
+    var uList = document.getElementById('universe-list');
+    uList.innerHTML = '';
+    (o.universes || []).forEach(function (name) {
+      var checked = o.defaults && (o.defaults.universes || []).indexOf(name) !== -1;
+      uList.appendChild(makeCheckboxLabel('universe', name, name, checked));
+    });
+
+    // Strategy checkboxes
+    var sList = document.getElementById('strategy-list');
+    sList.innerHTML = '';
+    (o.strategies || []).forEach(function (name) {
+      sList.appendChild(makeCheckboxLabel('strategy', name, name, false));
+    });
+
+    // Date/number defaults
+    if (o.defaults) {
+      var d = o.defaults;
+      setVal('f-data-start', d.data_start);
+      setVal('f-train-start', d.train_start);
+      setVal('f-train-finish', d.train_finish);
+      setVal('f-test-start', d.test_start);
+      setVal('f-test-finish', d.test_finish);
+      setVal('f-warmup', d.warm_up_candles);
+      setVal('f-balance', d.balance);
+      setVal('f-fee', d.fee);
+      setVal('f-trials', d.trials_per_hp);
+      setVal('f-optimal-total', d.optimal_total);
+      setVal('f-objective', d.objective_function);
+      setVal('f-min-train-days', d.min_train_days);
+      setVal('f-cpu', d.cpu_cores);
+      document.getElementById('f-cpu').max = o.max_cpu_cores || 64;
+      document.getElementById('f-run-fixed').checked = !!d.run_fixed;
+      document.getElementById('f-run-optimize').checked = !!d.run_optimize;
+      document.getElementById('f-import-candles').checked = !!d.import_candles;
+    }
+  }
+
+  function setVal(id, v) { if (v !== undefined && v !== null) document.getElementById(id).value = v; }
+
+  function makeCheckboxLabel(group, value, text, checked) {
+    var label = document.createElement('label');
+    var input = document.createElement('input');
+    input.type = 'checkbox'; input.value = value; input.dataset.group = group; input.checked = !!checked;
+    label.appendChild(input);
+    label.appendChild(document.createTextNode(text));
+    return label;
+  }
+
+  document.getElementById('refresh-options-btn').addEventListener('click', loadOptions);
+  document.getElementById('f-exchange').addEventListener('change', loadOptions);
+
+  document.getElementById('strategies-all-btn').addEventListener('click', function () {
+    document.querySelectorAll('#strategy-list input[type=checkbox]').forEach(function (c) { c.checked = true; });
+  });
+  document.getElementById('strategies-none-btn').addEventListener('click', function () {
+    document.querySelectorAll('#strategy-list input[type=checkbox]').forEach(function (c) { c.checked = false; });
+  });
+
+  function checkedValues(selector) {
+    return Array.prototype.map.call(document.querySelectorAll(selector + ':checked'), function (c) { return c.value; });
+  }
+
+  function parseSymbols(text) {
+    return text.split(/[\n,]/).map(function (s) { return s.trim(); }).filter(Boolean);
+  }
+
+  // --------------------------------------------------------------- start --
+
+  document.getElementById('start-btn').addEventListener('click', function () {
+    var errEl = document.getElementById('start-error');
+    errEl.classList.add('hidden');
+
+    var startBtn = document.getElementById('start-btn');
+    // Guard against a double-click racing the server's own check-then-create lock
+    // (storage.start_lock()) - not strictly required for correctness any more, but
+    // avoids firing a second, guaranteed-409 request while the first is in flight.
+    startBtn.disabled = true;
+
+    var payload = {
+      exchange: document.getElementById('f-exchange').value,
+      universes: checkedValues('#universe-list input'),
+      symbols: parseSymbols(document.getElementById('f-symbols').value),
+      strategies: checkedValues('#strategy-list input'),
+      timeframe: document.getElementById('f-timeframe').value,
+      data_start: document.getElementById('f-data-start').value,
+      train_start: document.getElementById('f-train-start').value,
+      train_finish: document.getElementById('f-train-finish').value,
+      test_start: document.getElementById('f-test-start').value,
+      test_finish: document.getElementById('f-test-finish').value,
+      warm_up_candles: parseInt(document.getElementById('f-warmup').value, 10),
+      balance: parseFloat(document.getElementById('f-balance').value),
+      fee: parseFloat(document.getElementById('f-fee').value),
+      run_fixed: document.getElementById('f-run-fixed').checked,
+      run_optimize: document.getElementById('f-run-optimize').checked,
+      trials_per_hp: parseInt(document.getElementById('f-trials').value, 10),
+      optimal_total: parseInt(document.getElementById('f-optimal-total').value, 10),
+      objective_function: document.getElementById('f-objective').value,
+      cpu_cores: parseInt(document.getElementById('f-cpu').value, 10) || null,
+      import_candles: document.getElementById('f-import-candles').checked,
+      min_train_days: parseInt(document.getElementById('f-min-train-days').value, 10),
+    };
+
+    api('/universe-scan/start', payload).then(function (r) {
+      startBtn.disabled = false;
+      if (!r.ok) {
+        errEl.textContent = (r.data && r.data.message) || 'Failed to start scan.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+      openSession(r.data.id);
+      loadSessionsList();
+    }).catch(function () {
+      startBtn.disabled = false;
+      errEl.textContent = 'Could not reach the server.';
+      errEl.classList.remove('hidden');
+    });
+  });
+
+  // ----------------------------------------------------------- progress --
+
+  function stopPolling() {
+    if (state.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = null; }
+  }
+
+  function openSession(id) {
+    stopPolling();
+    fetchSession(id);
+    state.pollTimer = setInterval(function () { fetchSession(id); }, 2000);
+  }
+
+  function fetchSession(id) {
+    api('/universe-scan/session', { id: id }).then(function (r) {
+      if (!r.ok) return;
+      state.session = r.data;
+      renderSession(r.data);
+      if (r.data.status !== 'running') stopPolling();
+    });
+  }
+
+  document.getElementById('cancel-btn').addEventListener('click', function () {
+    if (!state.session) return;
+    api('/universe-scan/cancel', { id: state.session.id });
+  });
+
+  function renderSession(session) {
+    var progressCard = document.getElementById('progress-card');
+    var resultsCard = document.getElementById('results-card');
+    var runningIndicator = document.getElementById('running-indicator');
+
+    if (session.status === 'running') {
+      progressCard.classList.remove('hidden');
+      // session.id is server/user-controlled (see UniverseScanStartRequestJson.id) -
+      // build the pill via textContent, never innerHTML string concatenation, so a
+      // crafted id can't inject markup here.
+      runningIndicator.textContent = '';
+      var pill = document.createElement('span');
+      pill.className = 'pill running';
+      pill.textContent = 'running: ' + session.id;
+      runningIndicator.appendChild(pill);
+      var p = session.progress || {};
+      var pct = p.total ? Math.round(100 * p.done / p.total) : 0;
+      document.getElementById('progress-bar').style.width = pct + '%';
+      document.getElementById('progress-session-id').textContent = session.id;
+      document.getElementById('progress-text').textContent =
+        'phase: ' + (p.phase || '-') + '  |  ' + p.done + ' / ' + p.total +
+        (p.current ? '  |  current: ' + p.current : '');
+    } else {
+      progressCard.classList.add('hidden');
+      runningIndicator.textContent = '';
+    }
+
+    resultsCard.classList.remove('hidden');
+    document.getElementById('results-session-id').textContent = session.id + ' (' + session.status + ')';
+    renderSurvivorship(session);
+    renderSkipped(session);
+    renderSummary(session);
+    renderFilters(session);
+    renderRows(session);
+  }
+
+  function renderSurvivorship(session) {
+    var el = document.getElementById('survivorship-banner');
+    if (!session.survivorship_warning) { el.classList.add('hidden'); return; }
+    var msg = typeof session.survivorship_warning === 'string'
+      ? session.survivorship_warning
+      : 'Survivorship bias warning: at least one universe was resolved using TODAY\'s index membership over a past window. ' +
+        'Absolute returns are inflated by construction - compare strategies against each stock\'s own buy & hold, not zero.';
+    el.textContent = msg;
+    el.classList.remove('hidden');
+  }
+
+  function renderSkipped(session) {
+    var wrap = document.getElementById('skipped-wrap');
+    var body = document.getElementById('skipped-body');
+    body.innerHTML = '';
+    var skipped = session.skipped || [];
+    if (!skipped.length) { wrap.classList.add('hidden'); return; }
+    wrap.classList.remove('hidden');
+    skipped.forEach(function (s) {
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + escapeHtml(s.symbol) + '</td><td>' + escapeHtml(s.reason) + '</td>';
+      body.appendChild(tr);
+    });
+  }
+
+  var SUMMARY_COLUMNS = [
+    ['strategy', 'Strategy'], ['stocks', 'Stocks'], ['trades', 'Trades'],
+    ['win_rate_pct', 'Win %'], ['median_pnl_pct', 'Med PnL %'], ['median_bh_pct', 'Med B&H %'],
+    ['beat_bh', 'Beat B&H'], ['median_sharpe', 'Med Sharpe'],
+    ['median_train_pnl_pct', 'Train Med PnL %'], ['median_train_bh_pct', 'Train Med B&H %'],
+    ['errors', 'Errors'],
+  ];
+
+  function renderSummary(session) {
+    var wrap = document.getElementById('summary-wrap');
+    wrap.innerHTML = '';
+    var summary = session.summary || [];
+    var byPhase = {};
+    summary.forEach(function (r) { (byPhase[r.phase] = byPhase[r.phase] || []).push(r); });
+
+    Object.keys(byPhase).sort().forEach(function (phase) {
+      var h = document.createElement('h3'); h.textContent = phase.toUpperCase() + ' - per strategy (TEST window)';
+      wrap.appendChild(h);
+
+      var tableWrap = document.createElement('div'); tableWrap.className = 'table-wrap'; tableWrap.style.marginBottom = '14px';
+      var table = document.createElement('table');
+      var thead = document.createElement('thead'); var htr = document.createElement('tr');
+      SUMMARY_COLUMNS.forEach(function (c) { var th = document.createElement('th'); th.textContent = c[1]; htr.appendChild(th); });
+      thead.appendChild(htr); table.appendChild(thead);
+
+      var tbody = document.createElement('tbody');
+      byPhase[phase].forEach(function (row) {
+        var tr = document.createElement('tr');
+        // Highlight a strategy that beat buy & hold on most of its stocks.
+        if (row.stocks && row.beat_bh > row.stocks / 2) tr.className = 'beat-bh';
+        SUMMARY_COLUMNS.forEach(function (c) {
+          var td = document.createElement('td');
+          var v = row[c[0]];
+          td.textContent = (v === null || v === undefined) ? '-' : v;
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      tableWrap.appendChild(table);
+      wrap.appendChild(tableWrap);
+    });
+  }
+
+  function renderFilters(session) {
+    var rows = session.rows || [];
+    var phases = uniqueSorted(rows.map(function (r) { return r.phase; }));
+    var strategies = uniqueSorted(rows.map(function (r) { return r.strategy; }));
+    fillSelectPreserving('filter-phase', phases);
+    fillSelectPreserving('filter-strategy', strategies);
+  }
+
+  function uniqueSorted(arr) {
+    var seen = {}; var out = [];
+    arr.forEach(function (v) { if (v && !seen[v]) { seen[v] = true; out.push(v); } });
+    return out.sort();
+  }
+
+  function fillSelectPreserving(id, values) {
+    var select = document.getElementById(id);
+    var current = select.value;
+    var allLabel = select.options[0];
+    select.innerHTML = '';
+    select.appendChild(allLabel);
+    values.forEach(function (v) { var opt = document.createElement('option'); opt.value = v; opt.textContent = v; select.appendChild(opt); });
+    if (values.indexOf(current) !== -1) select.value = current;
+  }
+
+  ['filter-phase', 'filter-strategy'].forEach(function (id) {
+    document.getElementById(id).addEventListener('change', function () { renderRows(state.session); });
+  });
+  document.getElementById('filter-symbol').addEventListener('input', function () { renderRows(state.session); });
+
+  var ROW_PRIORITY_COLUMNS = ['phase', 'strategy', 'symbol', 'train_start'];
+
+  function filteredRows(session) {
+    if (!session) return [];
+    var phase = document.getElementById('filter-phase').value;
+    var strategy = document.getElementById('filter-strategy').value;
+    var symbolText = document.getElementById('filter-symbol').value.trim().toUpperCase();
+    return (session.rows || []).filter(function (r) {
+      if (phase && r.phase !== phase) return false;
+      if (strategy && r.strategy !== strategy) return false;
+      if (symbolText && (r.symbol || '').toUpperCase().indexOf(symbolText) === -1) return false;
+      return true;
+    });
+  }
+
+  function rowColumns(rows) {
+    var keys = {};
+    rows.forEach(function (r) { Object.keys(r).forEach(function (k) { keys[k] = true; }); });
+    var rest = Object.keys(keys).filter(function (k) { return ROW_PRIORITY_COLUMNS.indexOf(k) === -1; }).sort();
+    return ROW_PRIORITY_COLUMNS.filter(function (k) { return keys[k]; }).concat(rest);
+  }
+
+  function renderRows(session) {
+    var rows = filteredRows(session);
+    var columns = rowColumns(rows);
+
+    if (state.sortKey && columns.indexOf(state.sortKey) !== -1) {
+      var key = state.sortKey, dir = state.sortDir;
+      rows = rows.slice().sort(function (a, b) {
+        var av = a[key], bv = b[key];
+        if (av === undefined) return 1; if (bv === undefined) return -1;
+        if (typeof av === 'object') av = JSON.stringify(av);
+        if (typeof bv === 'object') bv = JSON.stringify(bv);
+        if (av < bv) return -1 * dir; if (av > bv) return 1 * dir; return 0;
+      });
+    }
+
+    var head = document.getElementById('rows-head');
+    head.innerHTML = '';
+    columns.forEach(function (c) {
+      var th = document.createElement('th');
+      th.textContent = c;
+      if (c === state.sortKey) th.className = 'sorted';
+      th.addEventListener('click', function () {
+        if (state.sortKey === c) state.sortDir *= -1; else { state.sortKey = c; state.sortDir = 1; }
+        renderRows(state.session);
+      });
+      head.appendChild(th);
+    });
+
+    var body = document.getElementById('rows-body');
+    body.innerHTML = '';
+    rows.forEach(function (r) {
+      var tr = document.createElement('tr');
+      if (r.error) tr.className = 'row-error';
+      columns.forEach(function (c) {
+        var td = document.createElement('td');
+        var v = r[c];
+        if (v !== undefined && typeof v === 'object') v = JSON.stringify(v);
+        td.textContent = (v === undefined || v === null) ? '' : v;
+        tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    });
+  }
+
+  document.getElementById('download-csv-btn').addEventListener('click', function () {
+    if (!state.session) return;
+    var rows = state.session.rows || [];
+    var columns = rowColumns(rows);
+    var esc = function (v) {
+      if (v === undefined || v === null) return '';
+      // Numeric cells (e.g. a negative pnl_pct) must stay numbers, not get a
+      // formula-injection guard quote prepended just for starting with '-'.
+      var isNumber = typeof v === 'number';
+      if (typeof v === 'object') v = JSON.stringify(v);
+      v = String(v);
+      // Excel/Sheets treat a cell starting with =, +, -, @, or a leading tab/CR as a
+      // formula to execute on open - prefix with a single quote to force it to stay
+      // literal text (CSV formula injection). Only applies to non-numeric cells.
+      if (!isNumber && /^[=+\-@\t\r]/.test(v)) v = "'" + v;
+      return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+    };
+    var lines = [columns.join(',')];
+    rows.forEach(function (r) { lines.push(columns.map(function (c) { return esc(r[c]); }).join(',')); });
+    var blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'universe-scan-' + state.session.id + '.csv';
+    a.click();
+  });
+
+  // -------------------------------------------------------- sessions list --
+
+  function loadSessionsList() {
+    api('/universe-scan/sessions', {}).then(function (r) {
+      if (!r.ok) return;
+      renderSessionsList(r.data.sessions || []);
+    });
+  }
+
+  function renderSessionsList(sessions) {
+    var body = document.getElementById('sessions-body');
+    body.innerHTML = '';
+    sessions.forEach(function (s) {
+      var tr = document.createElement('tr');
+      var cfg = s.config_summary || {};
+      var p = s.progress || {};
+      var progressText = p.total ? (p.done + ' / ' + p.total + (p.phase ? ' (' + p.phase + ')' : '')) : '-';
+
+      var tdCreated = document.createElement('td'); tdCreated.textContent = fmtDate(s.created_at); tr.appendChild(tdCreated);
+
+      var tdStatus = document.createElement('td');
+      var pill = document.createElement('span'); pill.className = 'pill ' + s.status; pill.textContent = s.status;
+      tdStatus.appendChild(pill); tr.appendChild(tdStatus);
+
+      var tdProgress = document.createElement('td'); tdProgress.textContent = progressText; tr.appendChild(tdProgress);
+      var tdUniv = document.createElement('td'); tdUniv.textContent = (cfg.universes || []).join(', ') || '-'; tr.appendChild(tdUniv);
+      var tdStrat = document.createElement('td'); tdStrat.textContent = (cfg.strategies || []).join(', ') || '-'; tr.appendChild(tdStrat);
+      var tdRows = document.createElement('td'); tdRows.textContent = s.row_count; tr.appendChild(tdRows);
+
+      var tdActions = document.createElement('td');
+      var openBtn = document.createElement('button'); openBtn.className = 'link'; openBtn.textContent = 'Open';
+      openBtn.addEventListener('click', function () { openSession(s.id); });
+      tdActions.appendChild(openBtn);
+      tdActions.appendChild(document.createTextNode(' | '));
+      var delBtn = document.createElement('button'); delBtn.className = 'link'; delBtn.textContent = 'Delete';
+      delBtn.addEventListener('click', function () {
+        if (!confirm('Delete session ' + s.id + '?')) return;
+        api('/universe-scan/delete', { id: s.id }).then(function (r) {
+          if (r.ok) loadSessionsList(); else alert((r.data && r.data.message) || 'Could not delete.');
+        });
+      });
+      tdActions.appendChild(delBtn);
+      tr.appendChild(tdActions);
+
+      body.appendChild(tr);
+    });
+  }
+
+  document.getElementById('refresh-sessions-btn').addEventListener('click', loadSessionsList);
+
+  function fmtDate(iso) {
+    if (!iso) return '-';
+    try { return new Date(iso).toLocaleString(); } catch (e) { return iso; }
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  // ------------------------------------------------------------------ init --
+
+  if (getToken()) { showApp(); } else { showLogin(); }
+})();
+</script>
+</body>
+</html>

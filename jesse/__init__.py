@@ -43,6 +43,16 @@ async def index():
     return FileResponse(f"{JESSE_DIR}/static/index.html")
 
 
+# Universe scan (dev-pmallapp/jesse#80) ships its own self-contained page outside
+# jesse/static (that directory is a prebuilt bundle whose source isn't in this repo,
+# and upstream "Update frontend" commits replace it wholesale). Registered here -
+# before the StaticFiles mount below - and with no auth dependency, since the page
+# authenticates itself against /auth/login like the main dashboard does.
+@fastapi_app.get("/universe-scan")
+async def universe_scan_page():
+    return FileResponse(f"{JESSE_DIR}/universe_scan_page/index.html")
+
+
 
 
 
@@ -70,6 +80,7 @@ from jesse.controllers.tabs_controller import router as tabs_router
 from jesse.controllers.period_templates_controller import router as period_templates_router
 from jesse.controllers.route_templates_controller import router as route_templates_router
 from jesse.controllers.ai_model_controller import router as ai_model_router
+from jesse.controllers.universe_scan_controller import router as universe_scan_router
 from jesse.services.env import is_test_env
 
 # register routers
@@ -94,6 +105,7 @@ fastapi_app.include_router(tabs_router)
 fastapi_app.include_router(period_templates_router)
 fastapi_app.include_router(route_templates_router)
 fastapi_app.include_router(ai_model_router)
+fastapi_app.include_router(universe_scan_router)
 
 if is_test_env():
     from jesse.controllers.e2e_controller import router as e2e_router
