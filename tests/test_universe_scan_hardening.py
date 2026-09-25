@@ -29,6 +29,12 @@ universe_scan_controller = import_module('jesse.controllers.universe_scan_contro
 PASSWORD = 'universe-scan-hardening-test-password'
 AUTH_HEADERS = {'Authorization': sha256(PASSWORD.encode('utf-8')).hexdigest()}
 
+# The pid-namespace/starttime identity check only has a real implementation on Linux
+# (/proc) - see storage._linux_pid_ns()/_linux_proc_start_ticks(). Elsewhere it always
+# falls back to the pre-existing bare-pid check, which the non-Linux-specific tests
+# below already cover.
+LINUX_ONLY = pytest.mark.skipif(sys.platform != 'linux', reason='pid-namespace/starttime identity is Linux-only (/proc)')
+
 
 @pytest.fixture
 def storage_cwd(tmp_path, monkeypatch):
@@ -209,11 +215,88 @@ def test_is_running_true_for_a_worker_pid_that_is_actually_alive(app_client):
     assert storage.read_session('alive-worker')['status'] == 'running'
 
 
+@LINUX_ONLY
+def test_worker_identity_matches_the_current_live_process(storage_cwd):
+    """`mark_worker_started()` on Linux records pid_ns/start_ticks (not just a bare
+    pid) - for the current, still-running process, that identity must match itself and
+    read back as alive."""
+    storage.create_session('self-alive', {})
+    storage.mark_worker_started('self-alive', os.getpid())
+
+    worker = storage.read_session('self-alive')['worker']
+    assert worker['pid'] == os.getpid()
+    assert worker['pid_ns'] is not None
+    assert worker['start_ticks'] is not None
+
+    assert storage.is_running('self-alive') is True
+    assert storage.read_session('self-alive')['status'] == 'running'
+
+
+@LINUX_ONLY
+def test_same_pid_with_different_start_ticks_is_treated_as_dead(storage_cwd):
+    """A pid can be reused by an unrelated process after the original worker exits -
+    same pid number, different starttime. Identity must catch that a bare pid check
+    would miss, and mark the session dead."""
+    storage.create_session('reused-pid', {})
+    storage.mark_worker_started('reused-pid', os.getpid())
+
+    worker = dict(storage.read_session('reused-pid')['worker'])
+    worker['start_ticks'] = worker['start_ticks'] + 1_000_000  # simulate pid reuse
+    storage.update_session('reused-pid', worker=worker)
+
+    assert storage.is_running('reused-pid') is False
+    session = storage.read_session('reused-pid')
+    assert session['status'] == 'error'
+    assert session['error'] == 'worker process ended unexpectedly'
+
+
+@LINUX_ONLY
+def test_different_pid_namespace_is_treated_as_dead_even_with_a_live_pid(storage_cwd):
+    """The scenario this whole fix targets: after a container restart, `os.getpid()`
+    can very much be alive (a fresh, unrelated process took that number in the new pid
+    namespace) - a pid-namespace mismatch alone must be enough to call it dead, without
+    even checking whether the pid itself looks alive.
+    """
+    storage.create_session('other-container', {})
+    storage.mark_worker_started('other-container', os.getpid())
+
+    worker = dict(storage.read_session('other-container')['worker'])
+    worker['pid_ns'] = worker['pid_ns'] + 1  # simulate a fresh pid namespace
+    storage.update_session('other-container', worker=worker)
+
+    assert storage.is_running('other-container') is False
+    session = storage.read_session('other-container')
+    assert session['status'] == 'error'
+    assert session['error'] == 'worker process ended unexpectedly'
+
+
+def test_legacy_session_with_only_worker_pid_still_reconciles_when_dead(storage_cwd):
+    """A session written by the pre-identity version of this code recorded a bare
+    `worker_pid` int, no `worker` dict - `_worker_identity()` must normalize that into
+    the pid-only fallback instead of erroring on the missing key.
+    """
+    storage.create_session('legacy-dead', {})
+    storage.update_session('legacy-dead', worker_pid=_spawn_and_reap())
+
+    assert storage.is_running('legacy-dead') is False
+    assert storage.read_session('legacy-dead')['status'] == 'error'
+
+
+def test_legacy_session_with_only_worker_pid_still_reports_running_when_alive(storage_cwd):
+    storage.create_session('legacy-alive', {})
+    storage.update_session('legacy-alive', worker_pid=os.getpid())
+
+    assert storage.is_running('legacy-alive') is True
+    assert storage.read_session('legacy-alive')['status'] == 'running'
+
+
 def test_worker_liveness_check_degrades_instead_of_crashing_when_redis_is_unreachable(app_client, monkeypatch):
-    """No pid recorded yet (the brief create_session()..mark_worker_started() window)
-    falls back to the Redis marker - if that check itself blows up (unconfigured/down
-    Redis), `is_running()` must not 500 the request; it treats "can't tell" as "not
-    running" so a crash can't wedge every future /start behind an infra hiccup.
+    """No identity recorded yet (the brief create_session()..mark_worker_started()
+    window) falls back to the Redis marker - if that check itself blows up
+    (unconfigured/down Redis), `is_running()` must not 500 the request; it returns
+    False (can't prove it's alive) so a crash can't wedge every future /start behind an
+    infra hiccup, but - unlike a *positively confirmed* dead worker - must NOT persist
+    'error' onto a session that might simply still be starting up.
     """
     started = app_client.post('/universe-scan/start', json=_valid_payload(id='no-pid-yet'))
     assert started.status_code == 202
@@ -225,7 +308,9 @@ def test_worker_liveness_check_degrades_instead_of_crashing_when_redis_is_unreac
     monkeypatch.setattr(process_manager_module.ProcessManager, 'active_workers', property(_boom))
 
     assert storage.is_running('no-pid-yet') is False
-    assert storage.read_session('no-pid-yet')['status'] == 'error'
+    session = storage.read_session('no-pid-yet')
+    assert session['status'] == 'running'  # left alone - unknown is not "confirmed dead"
+    assert session['error'] is None
 
 
 def test_list_sessions_never_touches_redis_for_a_session_with_no_recorded_pid(storage_cwd):

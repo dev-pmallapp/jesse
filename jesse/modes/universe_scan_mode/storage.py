@@ -16,11 +16,26 @@ and `any_running()`) ever calls `update_session()`, and reads (the controller's
 writes to a temp file and `os.replace()`s it into place. A 'running' session whose
 worker has actually died (crash, or the whole server got SIGKILLed) does not stay
 'running' forever: `read_session()`/`list_sessions()` opportunistically reconcile it
-whenever the worker's own recorded pid has died (`_reconcile_pid_only()`, no Redis
-needed), and `is_running()`/`any_running()` - the controller's actual gating checks for
-`/start` and `/delete` - additionally cover the brief pid-less window via the Redis
-'active worker' marker (`_worker_alive()`). Either way this is a lazy, read-time
-correction, not a live guarantee.
+whenever the worker's own recorded identity has died (`_reconcile_pid_only()`, no
+Redis needed), and `is_running()`/`any_running()` - the controller's actual gating
+checks for `/start` and `/delete` - additionally cover the brief pid-less window via
+the Redis 'active worker' marker (`_worker_alive()`). Either way this is a lazy,
+read-time correction, not a live guarantee.
+
+Container-restart note: this project ships as a Docker image, and a bare pid is not a
+stable identity across a container restart - a fresh pid namespace renumbers its first
+processes starting near 1 again, so a recorded pid can coincide with an unrelated live
+process after a restart and a dead scan would then look "running" forever. On Linux,
+`mark_worker_started()` additionally records the worker's pid-namespace inode and its
+`/proc` starttime (see `_linux_pid_ns()`/`_linux_proc_start_ticks()`), and
+`_worker_process_alive()` treats a pid-namespace mismatch as "definitely dead" without
+even checking the pid. That inference relies on one assumption: the only process that
+ever reconciles a session is the same `jesse run` server that spawned the worker via
+`process_manager` (true here - `is_running()`/`any_running()`/`read_session()` are only
+called from this server's own request handlers). Under that assumption, if the reader's
+pid namespace differs from the one recorded at start, the server itself must now be
+running in a new container/namespace, so the old worker cannot possibly still be alive
+in this one.
 """
 import json
 import os
@@ -159,10 +174,10 @@ def _read_raw(session_id: str) -> Optional[dict]:
 
 def read_session(session_id: str) -> Optional[dict]:
     """`session.json`, lazily reconciled via `_reconcile_pid_only()` so a 'running'
-    session whose worker recorded a pid that has since died never reads back as
+    session whose worker recorded an identity that has since died never reads back as
     'running' forever. This is the cheap, offline-only half of reconciliation - see
     `is_running()`/`_worker_alive()` for the authoritative check (which also covers
-    the pid-less window via the Redis marker) that gates `/start` and `/delete`.
+    the identity-less window via the Redis marker) that gates `/start` and `/delete`.
     """
     session = _read_raw(session_id)
     if session is None:
@@ -188,15 +203,24 @@ def update_session(session_id: str, **updates) -> dict:
 
 
 def mark_worker_started(session_id: str, pid: int) -> None:
-    """Record the worker's OS pid in `session.json`, called by `run()` as close to its
-    first line as possible. This is what lets `is_running()` tell a genuinely running
-    scan apart from a stale 'running' status left by a worker that died without
-    updating its own session (SIGKILL, OOM kill, or the whole `jesse run` server being
-    killed) - the Redis 'active worker' marker in `services/multiprocessing.py` is only
-    cleared by that same server process's cleanup thread, so it does not, by itself,
-    survive a hard kill of the server.
+    """Record the worker's identity in `session.json`, called by `run()` as close to
+    its first line as possible. This is what lets `is_running()` tell a genuinely
+    running scan apart from a stale 'running' status left by a worker that died
+    without updating its own session (SIGKILL, OOM kill, or the whole `jesse run`
+    server being killed) - the Redis 'active worker' marker in
+    `services/multiprocessing.py` is only cleared by that same server process's
+    cleanup thread, so it does not, by itself, survive a hard kill of the server.
+
+    Identity is `{pid, pid_ns, start_ticks}`, not just `pid` - see the module
+    docstring's "Container-restart note" for why a bare pid isn't a stable identity in
+    a container. `pid_ns`/`start_ticks` are None wherever `/proc` isn't available
+    (non-Linux), in which case liveness falls back to a bare pid check.
     """
-    update_session(session_id, worker_pid=pid)
+    update_session(session_id, worker={
+        'pid': pid,
+        'pid_ns': _linux_pid_ns(),
+        'start_ticks': _linux_proc_start_ticks(pid),
+    })
 
 
 def request_cancel(session_id: str) -> None:
@@ -221,11 +245,12 @@ def delete_session(session_id: str) -> bool:
 
 def list_sessions() -> list:
     """Every session's full JSON, newest first by `updated_at`. Goes through
-    `read_session()`, so a listing reconciles any 'running' session whose recorded pid
-    has died (see `_reconcile_pid_only()`) - but, deliberately, does not perform the
-    Redis-backed check for sessions with no pid recorded yet, so listing every session
-    never depends on Redis being reachable/configured (`is_running()`/`any_running()`
-    still do that check where it matters: gating `/start` and `/delete`).
+    `read_session()`, so a listing reconciles any 'running' session whose recorded
+    worker identity has died (see `_reconcile_pid_only()`) - but, deliberately, does
+    not perform the Redis-backed check for sessions with no identity recorded yet, so
+    listing every session never depends on Redis being reachable/configured
+    (`is_running()`/`any_running()` still do that check where it matters: gating
+    `/start` and `/delete`).
     """
     if not os.path.isdir(SESSIONS_ROOT):
         return []
@@ -246,12 +271,13 @@ def _pid_alive(pid: int) -> bool:
     installed in this project's venv, so it can't be used here without adding one.
 
     This does not verify the process's identity (e.g. via its start time), only that
-    *some* process holds `pid` - psutil-free portable code can't read a process's
-    start time on every platform without it. In the rare case the OS has already
-    recycled `pid` for an unrelated process, this can delay noticing a dead worker
-    until that unrelated process also exits; it can never make a genuinely running
-    worker look dead, which is the failure mode that matters here (a false 'dead'
-    would flip a live scan to 'error' out from under it).
+    *some* process holds `pid` - so on its own it's vulnerable to pid reuse (see the
+    module docstring's "Container-restart note"). It's the fallback `_worker_process_alive()`
+    uses when the fuller identity check isn't available (non-Linux, or a session
+    written before this fix recorded only a bare pid) - never make a genuinely running
+    worker look dead, which is the failure mode that matters most here (a false 'dead'
+    would flip a live scan to 'error' out from under it); a false 'alive' after pid
+    reuse is comparatively rare and self-heals once the unrelated process also exits.
     """
     if not pid:
         return False
@@ -276,20 +302,88 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+def _linux_pid_ns() -> Optional[int]:
+    """Inode of this process's pid namespace (`/proc/self/ns/pid`), or None off Linux
+    (or wherever `/proc` isn't mounted/readable, e.g. some minimal containers). See the
+    module docstring's "Container-restart note" for why this matters: two processes in
+    different pid namespaces can share the same pid number without being the same
+    process, which is exactly what happens across a container restart.
+    """
+    try:
+        return os.stat('/proc/self/ns/pid').st_ino
+    except OSError:
+        return None
+
+
+def _linux_proc_start_ticks(pid: int) -> Optional[int]:
+    """`starttime` (field 22, in clock ticks since boot) from `/proc/<pid>/stat`, or
+    None if unavailable (non-Linux, no `/proc`, or the pid is already gone). Parsed
+    after the last ')' rather than by splitting on spaces, because `comm` (field 2, the
+    process name in parens) is whatever the process named itself and can itself
+    contain spaces or parentheses - every field up to and including `comm` sits inside
+    the outer parens, so the last ')' is the only reliable anchor. `fields[19]` is
+    field 22 because splitting after `)` starts the list at field 3 (state).
+    """
+    try:
+        with open(f'/proc/{pid}/stat') as f:
+            raw = f.read()
+        fields = raw.rsplit(')', 1)[1].split()
+        return int(fields[19])
+    except (OSError, IndexError, ValueError):
+        return None
+
+
+def _worker_identity(session: dict) -> Optional[dict]:
+    """Normalizes `session`'s recorded worker identity to `{'pid', 'pid_ns',
+    'start_ticks'}`, whether it was written by this version (`worker` dict, see
+    `mark_worker_started()`) or an older one (bare `worker_pid` int) - so a session
+    written before this fix keeps reconciling correctly via the pid-only fallback
+    instead of erroring on a missing key. None means no worker has been recorded yet
+    (the brief `create_session()`..`mark_worker_started()` window).
+    """
+    worker = session.get('worker')
+    if worker is not None:
+        return worker
+    pid = session.get('worker_pid')
+    if pid is None:
+        return None
+    return {'pid': pid, 'pid_ns': None, 'start_ticks': None}
+
+
+def _worker_process_alive(identity: dict) -> bool:
+    """Liveness of a recorded worker `identity`. Always returns a definite answer
+    (never "unknown") - this never touches Redis, only `/proc`/`os.kill`.
+
+    When both `pid_ns` and `start_ticks` were captured (Linux, and the session was
+    written by this version), a pid-namespace mismatch means "definitely dead" without
+    even looking at the pid - see the module docstring's "Container-restart note" for
+    why that inference is safe here. Otherwise (non-Linux, no `/proc`, or a legacy
+    session with only a bare pid) falls back to `_pid_alive()`, same as before this fix.
+    """
+    pid = identity.get('pid')
+    pid_ns = identity.get('pid_ns')
+    start_ticks = identity.get('start_ticks')
+    if pid_ns is not None and start_ticks is not None:
+        if _linux_pid_ns() != pid_ns:
+            return False
+        return _linux_proc_start_ticks(pid) == start_ticks
+    return _pid_alive(pid)
+
+
 def _reconcile_pid_only(session: dict) -> dict:
     """Read/list-path reconciliation: only ever consults the worker's own recorded
-    pid via `_pid_alive()` - cheap, local, and can never touch Redis or raise - so a
-    plain `/session` or `/sessions` read never depends on infrastructure beyond the
-    session file itself. A 'running' session with no pid recorded yet (the brief
-    window before `run()` reaches `mark_worker_started()`) is left alone here;
-    `is_running()`/`any_running()` (the controller's actual gating checks for
+    identity via `_worker_process_alive()` - cheap, local, and can never touch Redis or
+    raise - so a plain `/session` or `/sessions` read never depends on infrastructure
+    beyond the session file itself. A 'running' session with no identity recorded yet
+    (the brief window before `run()` reaches `mark_worker_started()`) is left alone
+    here; `is_running()`/`any_running()` (the controller's actual gating checks for
     `/start`'s "one scan at a time" and `/delete`'s "can't delete a running scan")
     additionally consult the Redis marker for that window - see `_worker_alive()`.
     """
     if session.get('status') != 'running':
         return session
-    pid = session.get('worker_pid')
-    if pid is None or _pid_alive(pid):
+    identity = _worker_identity(session)
+    if identity is None or _worker_process_alive(identity):
         return session
     try:
         return update_session(session['id'], status='error', error='worker process ended unexpectedly')
@@ -299,29 +393,32 @@ def _reconcile_pid_only(session: dict) -> dict:
         return session
 
 
-def _worker_alive(session: dict) -> bool:
+def _worker_alive(session: dict) -> Optional[bool]:
     """Authoritative liveness of `session`'s worker, from an already-loaded session
-    dict (never re-reads the file). Prefers the worker's own recorded pid (works fully
-    offline, no Redis needed); when no pid is recorded yet - the brief
+    dict (never re-reads the file). Prefers the worker's own recorded identity (works
+    fully offline, no Redis needed, and is always a definite True/False - see
+    `_worker_process_alive()`); when no identity is recorded yet - the brief
     `create_session()`..`mark_worker_started()` window - falls back to the Redis
     'active worker' marker `process_manager.add_task()` sets before starting the child.
 
-    That fallback is guarded: if the Redis client is unavailable/unconfigured (e.g.
-    running outside a jesse project, as in tests) or the call otherwise fails, there is
-    no way to prove the worker is alive - and treating "can't tell" as "assume still
-    running" would let a single Redis hiccup wedge "one scan at a time" forever (every
-    future `/start` would keep 409ing). Instead this treats it the same as "dead", so
-    the caller reconciles the stale 'running' status away instead of blocking forever.
+    Returns None (rather than False) when that Redis fallback itself fails (client
+    unavailable/unconfigured, e.g. running outside a jesse project as in tests, or a
+    genuine outage): there is no way to prove the worker is alive, but it hasn't been
+    proven dead either, so `is_running()` must not persist 'error' onto a session that
+    may simply still be starting up - only a definite False (from the identity check)
+    means the caller may do that. Treating "can't tell" as "assume still running"
+    would instead let a single Redis hiccup wedge "one scan at a time" forever (every
+    future `/start` would keep 409ing).
     """
-    pid = session.get('worker_pid')
-    if pid is not None:
-        return _pid_alive(pid)
+    identity = _worker_identity(session)
+    if identity is not None:
+        return _worker_process_alive(identity)
     from jesse.services.multiprocessing import process_manager
     try:
         return session['id'] in process_manager.active_workers
     except Exception as e:  # noqa: BLE001 - any Redis failure must degrade, not crash the request
-        jh.debug(f"universe-scan {session.get('id')}: could not check worker liveness ({type(e).__name__}: {e}); treating as not running")
-        return False
+        jh.debug(f"universe-scan {session.get('id')}: could not check worker liveness ({type(e).__name__}: {e}); treating as unknown")
+        return None
 
 
 def is_running(session_id: str) -> bool:
@@ -329,19 +426,26 @@ def is_running(session_id: str) -> bool:
     confirms it. This is the authoritative check the controller gates `/start`'s "one
     scan at a time" rule and `/delete`'s "can't delete a running scan" rule on, so -
     unlike `read_session()`'s cheaper pid-only pass - it also reconciles the pid-less
-    window via `_worker_alive()`'s Redis fallback, persisting 'error' immediately when
-    the worker turns out to be dead so a crash can't permanently block new scans with a
-    false 409.
+    window via `_worker_alive()`'s Redis fallback.
+
+    `_worker_alive()` returning None (unknown - e.g. Redis is unreachable during that
+    brief window) is treated as "not running" for gating purposes (so a hiccup can't
+    permanently 409 every future `/start`), but is deliberately NOT persisted as
+    'error' - the session might just still be starting. Only a definite False (the
+    worker's own recorded identity says it's dead) is persisted, immediately, so a
+    genuine crash can't permanently block new scans either.
     """
     session = _read_raw(session_id)
     if session is None or session.get('status') != 'running':
         return False
-    if _worker_alive(session):
+    alive = _worker_alive(session)
+    if alive is True:
         return True
-    try:
-        update_session(session_id, status='error', error='worker process ended unexpectedly')
-    except SessionNotFoundError:
-        pass
+    if alive is False:
+        try:
+            update_session(session_id, status='error', error='worker process ended unexpectedly')
+        except SessionNotFoundError:
+            pass
     return False
 
 
