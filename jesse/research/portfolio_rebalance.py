@@ -28,7 +28,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 import jesse.helpers as jh
-from jesse.exceptions import CandleNotFoundInDatabase
+from jesse.exceptions import CandleNotFoundInDatabase, PortfolioCandlesMissing
 from jesse.research.candles import get_candles
 from jesse.services.symbol_input import normalize_symbol
 
@@ -67,12 +67,17 @@ def portfolio_rebalance(
 
     start, finish = _parse_date(start_date), _parse_date(finish_date)
     prices = {s: _load_closes(exchange, s, start, finish) for s in symbols}
+    # Load the benchmark up front (not after simulate()) so a missing benchmark is
+    # reported in the same PortfolioCandlesMissing as missing basket symbols, instead of
+    # silently producing an empty benchmark curve later.
+    bench_symbol = normalize_symbol(exchange, benchmark) if benchmark is not None else None
+    bench_closes = _load_closes(exchange, bench_symbol, start, finish) if bench_symbol is not None else None
+
     missing = [s for s, series in prices.items() if not series]
+    if bench_symbol is not None and not bench_closes:
+        missing.append(bench_symbol)
     if missing:
-        raise ValueError(
-            f'No daily candles for {", ".join(missing)} between {start_date} and {finish_date} '
-            f'on {exchange} - import them first.'
-        )
+        raise PortfolioCandlesMissing(exchange, missing, start_date, finish_date)
 
     result = simulate(prices, start, capital=capital, rebalance_days=rebalance_days, fee=fee)
     result['survivorship_warning'] = universe is not None
@@ -81,11 +86,8 @@ def portfolio_rebalance(
         'start_date': start_date, 'finish_date': finish_date, 'capital': capital,
         'rebalance_days': rebalance_days, 'fee': fee, 'benchmark': benchmark,
     }
-    if benchmark is not None:
-        bench_symbol = normalize_symbol(exchange, benchmark)
-        result['benchmark'] = _benchmark_curve(
-            _load_closes(exchange, bench_symbol, start, finish), result['equity_curve'], capital, bench_symbol,
-        )
+    if bench_symbol is not None:
+        result['benchmark'] = _benchmark_curve(bench_closes, result['equity_curve'], capital, bench_symbol)
     return result
 
 
@@ -107,6 +109,10 @@ def simulate(
         raise ValueError('capital must be positive')
     if rebalance_days < 1:
         raise ValueError('rebalance_days must be at least 1')
+    if not 0 <= fee < 1:
+        # fee is a fraction of traded notional, per side - 1.0+ would make every buy
+        # unaffordable (or every sell raise negative cash), so treat it as invalid input.
+        raise ValueError('fee must be in [0, 1)')
 
     closes = {s: {d: float(c) for d, c in series if d >= start_date} for s, series in prices.items()}
     calendar = sorted({d for by_date in closes.values() for d in by_date})
@@ -133,7 +139,7 @@ def simulate(
 
         if session == day0 or session in rebalance_sessions:
             value_before = cash + sum(qty[s] * last_close[s] for s in qty if s in last_close)
-            cash, trades = _rebalance(qty, today, cash, fee)
+            cash, trades = rebalance_orders(qty, today, cash, fee)
             rebalances.append({
                 'date': session.isoformat(), 'value_before': value_before,
                 'trades': trades, 'cash_after': cash,
@@ -171,44 +177,63 @@ def simulate(
     }
 
 
-def _rebalance(qty: Dict[str, int], today: Dict[str, float], cash: float, fee: float) -> Tuple[float, list]:
-    """Bring the symbols priced `today` back to equal weight; mutates `qty`, returns (cash, trades).
+def rebalance_orders(qty: Dict[str, int], closes: Dict[str, float], cash: float, fee: float) -> Tuple[float, list]:
+    """Bring a basket back to equal weight against one shared cash pool, at a single
+    session's closes - the reusable core behind `simulate()` and (planned) a rebalance
+    planner for real holdings.
 
-    A symbol without a close today (suspended / not yet listed) keeps its position
-    untouched and is left out of both the pool value and N - its last close is stale,
-    so trading or sizing against it would be guesswork.
+    `qty` maps symbol -> current whole-share position; it is MUTATED in place to the new
+    positions. `closes` maps symbol -> that session's close, for every symbol to size and
+    trade; a symbol present in `qty` but ABSENT from `closes` (suspended / not yet listed
+    / not part of today's rebalance) is left untouched and excluded from both the pool
+    value and the equal-weight target - its last close is stale, so trading or sizing
+    against it would be guesswork. Conversely, a symbol in `closes` but not yet in `qty`
+    (e.g. a new universe member the planner wants to consider for real holdings that
+    don't include it yet) is treated as held at 0 and added to `qty`. `fee` is a fraction
+    of traded notional, charged per side.
+
+    Sells are executed before buys so the cash they raise funds the buys, whole shares
+    only, largest rupee shortfall first; cash is never left negative (a short buy just
+    leaves the remainder as cash) and the returned cash is floored at 0 to absorb float
+    dust from repeated fee arithmetic.
+
+    Returns `(cash, trades)`: the cash pool after all trades, and `trades` - a list of
+    `{'symbol', 'side' ('buy'/'sell'), 'qty', 'price', 'notional', 'fee'}` dicts in the
+    order they executed.
     """
-    active = sorted(today)
+    active = sorted(closes)
     if not active:
         return cash, []
-    pool = cash + sum(qty[s] * today[s] for s in active)
+    for s in active:
+        qty.setdefault(s, 0)
+    pool = cash + sum(qty[s] * closes[s] for s in active)
     target = pool / len(active)
-    desired = {s: math.floor(target / today[s]) for s in active}
+    desired = {s: math.floor(target / closes[s]) for s in active}
 
     trades = []
     # Sells first so the cash they raise is available for the buys below.
     for s in active:
         if qty[s] > desired[s]:
             n = qty[s] - desired[s]
-            notional = n * today[s]
+            notional = n * closes[s]
             cash += notional - notional * fee
             qty[s] -= n
-            trades.append(_trade(s, 'sell', n, today[s], fee))
+            trades.append(_trade(s, 'sell', n, closes[s], fee))
 
     # Buys: largest rupee shortfall first, whole shares only, never letting cash go
     # negative once the fee is included (a short buy just leaves the rest as cash).
     shortfalls = sorted(
         (s for s in active if desired[s] > qty[s]),
-        key=lambda s: (-(desired[s] - qty[s]) * today[s], s),
+        key=lambda s: (-(desired[s] - qty[s]) * closes[s], s),
     )
     for s in shortfalls:
-        affordable = math.floor(cash / (today[s] * (1 + fee)))
+        affordable = math.floor(cash / (closes[s] * (1 + fee)))
         n = min(desired[s] - qty[s], affordable)
         if n <= 0:
             continue
-        cash -= n * today[s] * (1 + fee)
+        cash -= n * closes[s] * (1 + fee)
         qty[s] += n
-        trades.append(_trade(s, 'buy', n, today[s], fee))
+        trades.append(_trade(s, 'buy', n, closes[s], fee))
     # Guard against float dust from repeated fee arithmetic.
     return max(cash, 0.0), trades
 
@@ -237,6 +262,8 @@ def _rebalance_sessions(calendar: List[date], start_date: date, rebalance_days: 
 def _curve_metrics(curve: List[dict], capital: float) -> dict:
     values = np.array([p['value'] for p in curve], dtype=float)
     first, last = date.fromisoformat(curve[0]['date']), date.fromisoformat(curve[-1]['date'])
+    # Floor at 1 day to avoid a division by zero on a single-session curve; CAGR is not
+    # meaningful over such a short window anyway (it just annualises noise).
     years = max((last - first).days, 1) / 365.25
     returns = np.diff(values) / values[:-1] if len(values) > 1 else np.array([])
     std = float(np.std(returns, ddof=1)) if len(returns) > 1 else 0.0

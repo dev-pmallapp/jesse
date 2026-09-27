@@ -1,5 +1,6 @@
 """Tests for jesse.research.portfolio_rebalance - the pure `simulate()` core, fed hand-built
 price maps so every trade can be checked by hand (no database needed)."""
+import importlib
 import subprocess
 import sys
 from datetime import date, timedelta
@@ -7,10 +8,18 @@ from pathlib import Path
 
 import pytest
 
+from jesse.exceptions import PortfolioCandlesMissing
 from jesse.research import portfolio_rebalance
-from jesse.research.portfolio_rebalance import simulate
+from jesse.research.portfolio_rebalance import rebalance_orders, simulate
 
 D = date.fromisoformat
+
+# `jesse.research.portfolio_rebalance` (the module) is shadowed on the `jesse.research`
+# package by the re-exported `portfolio_rebalance` function of the same name (see
+# `jesse/research/__init__.py`), so `from jesse.research import portfolio_rebalance`
+# above gives the function; fetch the actual module by its fully-qualified name to
+# monkeypatch module-level helpers like `_load_closes`.
+prb_module = importlib.import_module('jesse.research.portfolio_rebalance')
 
 
 def sessions(start: str, finish: str, skip=()):
@@ -146,6 +155,103 @@ def test_validation_errors():
         simulate({'A-INR': series(days, lambda d: 1.0)}, D('2025-01-01'), capital=10, rebalance_days=0)
     with pytest.raises(ValueError):
         portfolio_rebalance('2025-01-01', '2025-02-01')  # neither symbols nor universe
+
+
+def test_rebalance_orders_sells_before_buys_raising_cash():
+    # A is over target (worth 1000 of a 1000 pool alone), B holds nothing: A must be
+    # sold down before B can be bought, and the sale proceeds fund the buy exactly.
+    qty = {'A-INR': 10, 'B-INR': 0}
+    closes = {'A-INR': 100.0, 'B-INR': 100.0}
+    cash, trades = rebalance_orders(qty, closes, cash=0.0, fee=0.0)
+    assert [(t['symbol'], t['side'], t['qty']) for t in trades] == [
+        ('A-INR', 'sell', 5), ('B-INR', 'buy', 5),
+    ]
+    assert qty == {'A-INR': 5, 'B-INR': 5}
+    assert cash == 0.0
+
+
+def test_rebalance_orders_unaffordable_stock_left_as_cash():
+    qty = {'A-INR': 0, 'B-INR': 0}
+    closes = {'A-INR': 100.0, 'B-INR': 1000.0}
+    cash, trades = rebalance_orders(qty, closes, cash=300.0, fee=0.0)
+    # Target 150 each: A affords 1 share, B's single share (1000) exceeds target -> stays cash.
+    assert qty == {'A-INR': 1, 'B-INR': 0}
+    assert cash == 200.0
+    assert [t['symbol'] for t in trades] == ['A-INR']
+
+
+def test_rebalance_orders_symbol_missing_from_closes_is_untouched():
+    qty = {'A-INR': 5, 'C-INR': 3}
+    closes = {'A-INR': 100.0}  # C is suspended today - absent from closes.
+    cash, trades = rebalance_orders(qty, closes, cash=0.0, fee=0.0)
+    assert qty['C-INR'] == 3
+    assert all(t['symbol'] != 'C-INR' for t in trades)
+
+
+def test_rebalance_orders_cash_never_negative_with_fee():
+    qty = {'A-INR': 0}
+    closes = {'A-INR': 100.0}
+    cash, trades = rebalance_orders(qty, closes, cash=1000.0, fee=0.01)
+    # 10 shares would cost 1010 with the fee, so only 9 fit.
+    assert qty == {'A-INR': 9}
+    assert cash == pytest.approx(91.0)
+    assert cash >= 0
+
+
+def test_rebalance_orders_adds_new_symbol_from_closes_at_zero():
+    # B is priced today but has no existing position (e.g. a new universe member the
+    # planner is considering for real holdings that don't include it yet) - it should be
+    # treated as held at 0, added to `qty`, and be eligible to buy into like any other.
+    qty = {'A-INR': 10}
+    closes = {'A-INR': 100.0, 'B-INR': 100.0}
+    cash, trades = rebalance_orders(qty, closes, cash=0.0, fee=0.0)
+    assert 'B-INR' in qty
+    assert qty == {'A-INR': 5, 'B-INR': 5}
+    assert ('B-INR', 'buy', 5) in [(t['symbol'], t['side'], t['qty']) for t in trades]
+
+
+def test_simulate_rejects_invalid_fee():
+    days = sessions('2025-01-01', '2025-01-03')
+    prices = {'A-INR': series(days, lambda d: 1.0)}
+    with pytest.raises(ValueError):
+        simulate(prices, D('2025-01-01'), capital=10, fee=-0.01)
+    with pytest.raises(ValueError):
+        simulate(prices, D('2025-01-01'), capital=10, fee=1.0)
+
+
+def test_portfolio_rebalance_raises_typed_error_listing_missing_symbols(monkeypatch):
+    # Fake `_load_closes`: only A-INR has candles, B-INR does not - no DB needed.
+    def fake_load_closes(exchange, symbol, start, finish):
+        if symbol == 'A-INR':
+            return [(D('2025-01-01'), 100.0)]
+        return []
+
+    monkeypatch.setattr(prb_module, '_load_closes', fake_load_closes)
+    with pytest.raises(PortfolioCandlesMissing) as exc_info:
+        portfolio_rebalance('2025-01-01', '2025-02-01', symbols=['A-INR', 'B-INR'])
+
+    err = exc_info.value
+    assert isinstance(err, ValueError)
+    assert err.symbols == ['B-INR']
+    assert err.exchange == 'NSE'
+    assert err.start_date == '2025-01-01' and err.finish_date == '2025-02-01'
+
+
+def test_portfolio_rebalance_missing_benchmark_is_reported_with_basket_symbols(monkeypatch):
+    # Basket symbol A-INR has candles, but neither B-INR nor the benchmark does - both
+    # must show up in one error instead of the benchmark silently yielding an empty curve.
+    def fake_load_closes(exchange, symbol, start, finish):
+        if symbol == 'A-INR':
+            return [(D('2025-01-01'), 100.0)]
+        return []
+
+    monkeypatch.setattr(prb_module, '_load_closes', fake_load_closes)
+    with pytest.raises(PortfolioCandlesMissing) as exc_info:
+        portfolio_rebalance(
+            '2025-01-01', '2025-02-01', symbols=['A-INR', 'B-INR'], benchmark='BENCH-INR',
+        )
+
+    assert exc_info.value.symbols == ['B-INR', 'BENCH-INR']
 
 
 def test_import_jesse_research_still_does_not_load_india_modules():
