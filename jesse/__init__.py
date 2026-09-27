@@ -43,18 +43,21 @@ async def index():
     return FileResponse(f"{JESSE_DIR}/static/index.html")
 
 
-# Universe scan (dev-pmallapp/jesse#80/#90) is now a page *inside* the dashboard SPA
-# (see jesse/dashboard_patches/ and scripts/patch_dashboard.py), reached client-side
-# via the router-link the patcher adds to the sidebar - but a hard refresh or a direct
-# deep link to /universe-scan still hits the server first, before any SPA JS has run.
-# There's no html=True/404-fallback on the StaticFiles mount below, so without this
-# route such a request would 404 instead of booting the SPA (same reasoning as the
-# "/" route above; every other dashboard mode's deep routes have this same gap - not
-# specific to this page). Registered here, before the StaticFiles mount, with no auth
-# dependency: the SPA itself (not the server) decides whether to show the page or its
-# own login gate, based on the auth token it finds in localStorage.
+# Universe Scan (dev-pmallapp/jesse#80/#90) and Portfolio (dev-pmallapp/jesse#92) are
+# pages *inside* the dashboard SPA (see jesse/dashboard_patches/ and
+# scripts/patch_dashboard.py), reached client-side via the router-links the patcher
+# adds to the sidebar - but a hard refresh or a direct deep link to either path still
+# hits the server first, before any SPA JS has run. There's no html=True/404-fallback
+# on the StaticFiles mount below, so without these routes such a request would 404
+# instead of booting the SPA (same reasoning as the "/" route above; every other
+# dashboard mode's deep routes have this same gap - not specific to these pages).
+# Registered here, before the StaticFiles mount, with no auth dependency: the SPA
+# itself (not the server) decides whether to show the page or its own login gate,
+# based on the auth token it finds in localStorage. Add a new `@fastapi_app.get(...)`
+# line here whenever a new page is added to `scripts/patch_dashboard.py`'s `PAGES`.
 @fastapi_app.get("/universe-scan")
-async def universe_scan_page():
+@fastapi_app.get("/portfolio")
+async def dashboard_spa_page():
     return FileResponse(f"{JESSE_DIR}/static/index.html")
 
 

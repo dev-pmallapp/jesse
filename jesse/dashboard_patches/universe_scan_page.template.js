@@ -1,6 +1,6 @@
-/*jesse-universe-scan-patch*/
+/*jesse-dashboard-patch:universe-scan*/
 /*
- * Universe Scan page for the compiled Nuxt dashboard (dev-pmallapp/jesse#80/#90).
+ * Universe Scan page for the compiled Nuxt dashboard (dev-pmallapp/jesse#80/#90/#92).
  *
  * This file is a SOURCE TEMPLATE, not the file that actually ships in
  * `jesse/static/_nuxt/`. `scripts/patch_dashboard.py` copies it into

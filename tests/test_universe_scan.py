@@ -404,3 +404,20 @@ def test_get_universe_scan_page_serves_dashboard_spa_shell_without_auth():
     # Same bytes as `GET /` - proves this isn't serving a leftover standalone page.
     assert response.content == client.get('/').content
     assert b'__NUXT__' in response.content
+
+
+def test_get_portfolio_page_serves_dashboard_spa_shell_without_auth():
+    """Mirrors `test_get_universe_scan_page_serves_dashboard_spa_shell_without_auth`
+    above for the second dashboard-only page (dev-pmallapp/jesse#92): `GET /portfolio`
+    is registered on the same shared, un-auth-gated handler (see `jesse/__init__.py`)
+    and must serve the identical `static/index.html` shell, not a 404 from the
+    StaticFiles mount."""
+    from jesse.services.web import fastapi_app
+
+    client = TestClient(fastapi_app)
+    response = client.get('/portfolio')
+    assert response.status_code == 200
+    assert 'text/html' in response.headers['content-type']
+    # Same bytes as `GET /` - proves this is the SPA shell, not a 404/placeholder.
+    assert response.content == client.get('/').content
+    assert b'__NUXT__' in response.content
