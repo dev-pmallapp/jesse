@@ -218,8 +218,9 @@ def test_backtest_with_universe_resolves_symbols_and_flags_survivorship(client, 
         'B-INR': [(d, 50.0) for d in days],
     }))
 
+    # `symbols: []` is what /portfolio/options' defaults carry alongside the universe.
     payload = {
-        'universe': 'NIFTY200 ALPHA 30',
+        'universe': 'NIFTY200 ALPHA 30', 'symbols': [],
         'start_date': '2025-01-01', 'finish_date': '2025-01-05', 'capital': 1000,
     }
     response = client.post('/portfolio/backtest', json=payload)

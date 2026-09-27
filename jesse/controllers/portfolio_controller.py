@@ -98,8 +98,10 @@ def run_portfolio_backtest(request_json: PortfolioBacktestRequestJson):
         result = research.portfolio_rebalance(
             start_date=request_json.start_date,
             finish_date=request_json.finish_date,
-            symbols=request_json.symbols,
-            universe=request_json.universe,
+            # Normalise the unused selector to None: `portfolio_rebalance` checks `is None`,
+            # and the page (or /options' own defaults) may send `symbols: []` / `universe: ''`.
+            symbols=request_json.symbols or None,
+            universe=request_json.universe or None,
             exchange=request_json.exchange,
             capital=request_json.capital,
             rebalance_days=request_json.rebalance_days,
