@@ -386,13 +386,21 @@ def test_universe_scan_post_routes_require_auth(tmp_path, monkeypatch):
     assert response.status_code == 401
 
 
-def test_get_universe_scan_page_serves_html_without_auth():
+def test_get_universe_scan_page_serves_dashboard_spa_shell_without_auth():
     """`GET /universe-scan` is registered directly on the shared `fastapi_app` (not
-    the auth-gated router) - see `jesse/__init__.py` - so the standalone page loads
-    with no Authorization header at all."""
+    the auth-gated router) - see `jesse/__init__.py` - and, now that Universe Scan is a
+    page inside the dashboard SPA rather than a standalone page (see
+    `jesse/dashboard_patches/`), serves the exact same `static/index.html` shell as
+    `GET /`. This only covers the server-side fallback for a hard refresh/deep link;
+    the client-side route the patched bundle then boots into isn't exercised by a
+    plain `TestClient` request (no JS execution) - see
+    `tests/test_patch_dashboard.py` for the bundle-patch coverage."""
     from jesse.services.web import fastapi_app
 
     client = TestClient(fastapi_app)
     response = client.get('/universe-scan')
     assert response.status_code == 200
     assert 'text/html' in response.headers['content-type']
+    # Same bytes as `GET /` - proves this isn't serving a leftover standalone page.
+    assert response.content == client.get('/').content
+    assert b'__NUXT__' in response.content
