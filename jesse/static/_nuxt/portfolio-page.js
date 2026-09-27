@@ -246,6 +246,56 @@ function parseSymbolsInput(text) {
   return text.split(/[\s,]+/).map(function (s) { return s.trim(); }).filter(Boolean);
 }
 
+// Client-side mirror of the server's own validation (contract's 400 `invalid_request`
+// checks) - catches the common "empty/garbage number input" case *before* a request
+// goes out, so the user sees a specific, actionable message instead of a generic
+// "Backtest failed." built from a 400/422 body. Pure and DOM-free: takes the payload
+// `buildPayload()` already assembled (parseFloat/parseInt already applied, so an empty
+// or non-numeric field is already `NaN` here) and returns the first problem found, or
+// `null` if the payload looks sendable.
+function validateBacktestPayload(payload) {
+  if (payload.universe === null) {
+    if (!payload.symbols || !payload.symbols.length) {
+      return 'Enter at least one symbol, or switch to Universe mode.';
+    }
+  } else if (!payload.universe) {
+    // An empty string - e.g. /portfolio/options hasn't loaded yet, or came back with
+    // an empty universe list - would otherwise silently become `universe: ""` on the
+    // wire and rely on the server to reject it.
+    return 'Choose a universe (reload options if the list is empty), or switch to Symbols mode.';
+  }
+  if (!Number.isFinite(payload.capital) || payload.capital <= 0) {
+    return 'Capital must be a number greater than 0.';
+  }
+  if (!Number.isInteger(payload.rebalance_days) || payload.rebalance_days < 1) {
+    return 'Rebalance every N days must be a whole number of at least 1.';
+  }
+  if (!Number.isFinite(payload.fee) || payload.fee < 0 || payload.fee >= 1) {
+    return 'Fee must be a fraction from 0 up to (but not including) 1, e.g. 0.001.';
+  }
+  return null;
+}
+
+// Turns a failed response body into a readable message, whether it's this API's own
+// contract shape (`{message: ...}`, e.g. the 400 `invalid_request` / 422
+// `missing_candles` cases) or FastAPI's default request-validation body
+// (`{detail: [{loc: [...], msg: ...}, ...]}`, raised automatically for a field that
+// fails Pydantic validation before this endpoint's own handler even runs - e.g. a
+// wildly out-of-range number FastAPI itself rejects). Without this fallback a
+// `detail`-shaped body would fall through to the generic "Backtest failed." with no
+// indication of which field was the problem.
+function formatServerErrorMessage(data) {
+  if (!data) return null;
+  if (typeof data.message === 'string' && data.message) return data.message;
+  if (Array.isArray(data.detail)) {
+    return data.detail.map(function (d) {
+      const loc = Array.isArray(d.loc) ? d.loc.filter(function (p) { return p !== 'body'; }).join('.') : '';
+      return (loc ? loc + ': ' : '') + (d.msg || 'invalid value');
+    }).join('; ');
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------------
 // CSV builders - same columns as docs/examples/equal_weight_rebalance.py so a run
 // exported from here matches the CLI script byte-for-byte in shape.
@@ -733,8 +783,9 @@ function createController(root) {
     clearRunError();
     q('pf-missing-candles-card').classList.add('pf-hidden');
     const payload = buildPayload();
-    if (payload.universe === null && (!payload.symbols || !payload.symbols.length)) {
-      showRunError('Enter at least one symbol, or switch to Universe mode.');
+    const validationError = validateBacktestPayload(payload);
+    if (validationError) {
+      showRunError(validationError);
       return;
     }
 
@@ -752,7 +803,7 @@ function createController(root) {
         renderMissingCandles(r.data);
         return;
       }
-      showRunError((r.data && r.data.message) || 'Backtest failed.');
+      showRunError(formatServerErrorMessage(r.data) || 'Backtest failed.');
     }).catch(function () {
       setRunning(false);
       showRunError('Could not reach the server.');
