@@ -67,16 +67,25 @@ def read_run(run_id: str) -> Optional[dict]:
     its file is corrupt/unreadable - callers treat both the same way (404): a
     half-written or hand-edited file is not something the API can recover from, and
     "not found" is a more honest response than a 500.
+
+    "Corrupt" also covers valid JSON that isn't the shape a run record must have -
+    anything other than a dict with `created_at`/`result` keys - so a garbage or
+    truncated-but-still-parseable file (e.g. a bare `[1, 2, 3]`, or `{}`) can't reach
+    `list_run_summaries()`'s `.get()` calls or the `/run` response as if it were real.
     """
     path = run_path(run_id)
     if not os.path.exists(path):
         return None
     try:
         with open(path) as f:
-            return json.load(f)
+            record = json.load(f)
     except (OSError, json.JSONDecodeError) as e:
         jh.debug(f"portfolio run {run_id}: could not read {path} ({type(e).__name__}: {e})")
         return None
+    if not isinstance(record, dict) or 'created_at' not in record or 'result' not in record:
+        jh.debug(f"portfolio run {run_id}: {path} is not a valid run record")
+        return None
+    return record
 
 
 def delete_run(run_id: str) -> bool:

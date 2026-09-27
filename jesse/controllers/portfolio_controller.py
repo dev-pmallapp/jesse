@@ -124,6 +124,10 @@ def run_portfolio_backtest(request_json: PortfolioBacktestRequestJson):
         # (`jesse.services.historical_data.india.universes.universe`).
         return _invalid_request(str(e))
 
+    # force_fresh=True: this is a save-time wall-clock stamp for a synchronous API
+    # request, not a simulated backtest tick, so it must bypass jh.now()'s default
+    # store.app.time path (which needs an initialized engine and would otherwise be
+    # stale/unset outside one).
     created_at = jh.now(force_fresh=True)
     run_id = jh.generate_unique_id() if request_json.save else None
     if run_id is not None:
