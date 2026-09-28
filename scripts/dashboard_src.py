@@ -14,6 +14,15 @@ like the original build output.
 Subcommands: status | deploy | revert | extract. Run `dashboard_src.py <cmd> --help` for
 per-command options. Only Python stdlib is used; `extract` shells out to `npx @wakaru/cli`
 and `npx prettier` (dev-only tools, not repo dependencies) and to `node --check`.
+
+Which tool owns what (see docs/dashboard-bundle/PATCHING.md and dashboard/README.md for
+the full rationale): `scripts/patch_dashboard.py` owns inserting extra pages (Universe
+Scan, Portfolio, ...) into the entry chunk's route table/nav and owns every generated
+`*-page.js` chunk outright. This script's mirror always represents the entry chunk's
+UNPATCHED upstream content - every read/hash/compare of the shipped entry chunk below
+goes through `patch_dashboard.strip_patch()` first (see `_strip_patch_if_entry` and its
+callers), and generated `*-page.js` chunks are excluded from classification entirely
+(they're never "APP" or "VENDOR" here, they're just not this mirror's concern).
 """
 from __future__ import annotations
 
@@ -24,6 +33,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -32,6 +42,16 @@ SRC_DIR = REPO_ROOT / "dashboard" / "src"
 SRC_NUXT = SRC_DIR / "_nuxt"
 MANIFEST_PATH = SRC_DIR / "manifest.json"
 INDEX_PATH = SRC_DIR / "INDEX.md"
+
+# Both scripts live under scripts/; import patch_dashboard.py by inserting this file's
+# own directory (not the caller's cwd or sys.path[0]) so this works whether the module
+# is run directly (`python scripts/dashboard_src.py`), imported via `-m`, or loaded by
+# path from a test (`importlib.util.spec_from_file_location`, which does NOT add the
+# script's directory to sys.path the way a normal `python <script>` invocation does).
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+import patch_dashboard  # noqa: E402  (path insert must happen first)
 
 # Tool versions this pipeline was last verified against (`extract` prints the versions it
 # actually finds; this is just a sanity reference for README/INDEX generation).
@@ -158,17 +178,83 @@ def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+# ---------------------------------------------------------------------------
+# patch_dashboard.py interop: the mirror always represents the entry chunk's UNPATCHED
+# upstream content (patch_dashboard.py owns inserting pages into it - see the module
+# docstring). Every place below that reads/hashes/compares a shipped `_nuxt/*.js` file
+# routes through these two helpers instead of touching `path.read_text()`/`read_bytes()`
+# directly, so the page-injection patch is transparently stripped back out whenever
+# `path` is the entry chunk and left alone for every other chunk.
+# ---------------------------------------------------------------------------
+
+def _strip_patch_if_entry(text: str, fname: str, entry_chunk: str | None) -> str:
+    """`strip_patch(text)` if `fname` is the entry chunk, else `text` unchanged. Safe to
+    call on already-unpatched text (patch_dashboard.strip_patch is a no-op when none of
+    its markers are present)."""
+    if entry_chunk is not None and fname == entry_chunk:
+        return patch_dashboard.strip_patch(text)
+    return text
+
+
+def read_shipped_text(path: Path, entry_chunk: str | None) -> str:
+    """A shipped `_nuxt/*.js` chunk's text as `dashboard/src/` should see it: unpatched,
+    even if `path` currently carries patch_dashboard's page-injection patch. Read-only,
+    analysis-purpose text (classification, route/import-graph parsing) - decodes with
+    errors="replace" like the rest of this module's pre-existing text reads, which is
+    fine here since nothing derived from it is ever written back to disk. Anything that
+    IS written back to disk must go through `unpatched_shipped_bytes` instead, which
+    decodes strictly."""
+    return _strip_patch_if_entry(path.read_text(errors="replace"), path.name, entry_chunk)
+
+
+def _unpatch_bytes_if_entry(data: bytes, fname: str, entry_chunk: str | None) -> bytes:
+    """`strip_patch`'s bytes-in-bytes-out form: `data` unpatched if `fname` is the entry
+    chunk, else `data` unchanged. `strip_patch` operates on `str`, so this decodes
+    strictly (errors="strict", the default) rather than read_shipped_text's lossy
+    errors="replace" - a genuinely non-UTF-8 shipped file must fail loudly here
+    (UnicodeDecodeError) instead of silently replacing bytes, since callers of this
+    function (sha256_shipped, original_chunk_bytes, extract's fallback writes) either
+    hash the result against a recorded sha256 or write it straight back to disk, where a
+    silent lossy substitution would corrupt the output undetected."""
+    if entry_chunk is not None and fname == entry_chunk:
+        return patch_dashboard.strip_patch(data.decode("utf-8")).encode("utf-8")
+    return data
+
+
+def unpatched_shipped_bytes(path: Path, entry_chunk: str | None) -> bytes:
+    """Byte-exact UNPATCHED content of a shipped `_nuxt/*.js` chunk, suitable to write
+    straight back to disk (unlike `read_shipped_text`, which is lossy and read-only)."""
+    return _unpatch_bytes_if_entry(path.read_bytes(), path.name, entry_chunk)
+
+
+def sha256_shipped(path: Path, entry_chunk: str | None) -> str:
+    """sha256 of a shipped chunk's UNPATCHED content - what every manifest
+    `original_sha256` is recorded against."""
+    return hashlib.sha256(unpatched_shipped_bytes(path, entry_chunk)).hexdigest()
+
+
 def classify_chunks(static_nuxt: Path = STATIC_NUXT) -> dict:
     """Classify every `_nuxt/*.js` chunk as APP or VENDOR.
 
     Returns {filename: {"kind": "APP"|"VENDOR", "reasons": [...], "names": [...],
                          "stores": [...], "paths": [...]}}.
     CSS, fonts, images and the nuxt-monaco-editor/ vendored metadata directory are out of
-    scope (not JS chunks) and are not included here.
+    scope (not JS chunks) and are not included here. Generated `*-page.js` chunks
+    (`patch_dashboard.PAGES`) are excluded outright, never classified APP or VENDOR:
+    they're owned by patch_dashboard.py, not this mirror, regardless of whether their
+    current template content happens to trip one of the APP signals below (e.g. quoting
+    a `/universe-scan`-prefixed path - today it doesn't, since the templates use plain
+    string literals rather than the backtick literals API_PATH_RE looks for, but that's
+    an incidental fact about the current templates, not something this classifier
+    should ever depend on).
     """
+    entry_chunk = find_entry_chunk(static_nuxt)
+    generated_chunk_names = {page.chunk_name for page in patch_dashboard.PAGES}
     out = {}
     for f in sorted(static_nuxt.glob("*.js")):
-        text = f.read_text(errors="replace")
+        if f.name in generated_chunk_names:
+            continue
+        text = read_shipped_text(f, entry_chunk)
         paths = sorted(set(API_PATH_RE.findall(text)))
         stores = sorted(set(STORE_DEF_RE.findall(text)))
         app_names = sorted({n for n in NAME_RE.findall(text) if not is_vendor_name(n)})
@@ -196,10 +282,14 @@ def parse_routes(static_nuxt: Path = STATIC_NUXT) -> list[tuple[str, str, str]]:
     r"""Find the entry chunk (the one containing the route table) by content, and parse its
     `name:\`x\`,path:\`/y\`,component:()=>...import(\`./Z.js\`)` route records.
 
-    Returns a list of (route_name, route_path, chunk_filename).
+    Returns a list of (route_name, route_path, chunk_filename). Reads the entry chunk in
+    its unpatched form (see `read_shipped_text`), so patch_dashboard's injected routes
+    (`/universe-scan`, `/portfolio`, ...) never show up here - those pages' source lives
+    under `jesse/dashboard_patches/`, not this mirror.
     """
+    entry_chunk = find_entry_chunk(static_nuxt)
     for f in static_nuxt.glob("*.js"):
-        text = f.read_text(errors="replace")
+        text = read_shipped_text(f, entry_chunk)
         if "path:`/significance-test`" in text or "path:`/backtest`" in text:
             return ROUTE_RE.findall(text)
     return []
@@ -221,10 +311,13 @@ DYNAMIC_IMPORT_RE = re.compile(r"import\(`\./([\w.$-]+\.js)`\)")
 def build_reverse_import_graph(static_nuxt: Path = STATIC_NUXT) -> dict:
     """importee filename -> set of importer filenames, scanning every chunk's static and
     dynamic `./X.js` import specifiers (relative imports only, which is all Vite emits
-    within `_nuxt/`)."""
+    within `_nuxt/`). Reads the entry chunk unpatched, so its dynamic imports of the
+    generated page chunks (owned by patch_dashboard.py, not this mirror) aren't
+    included."""
+    entry_chunk = find_entry_chunk(static_nuxt)
     reverse: dict[str, set] = {}
     for f in static_nuxt.glob("*.js"):
-        text = f.read_text(errors="replace")
+        text = read_shipped_text(f, entry_chunk)
         importees = set(IMPORT_RE.findall(text)) | set(DYNAMIC_IMPORT_RE.findall(text))
         for imp in importees:
             reverse.setdefault(imp, set()).add(f.name)
@@ -325,22 +418,28 @@ def read_git_head_blob(relpath: str) -> bytes | None:
     return proc.stdout if proc.returncode == 0 else None
 
 
-def original_chunk_bytes(fname: str, entry: dict) -> bytes | None:
-    """The shipped chunk's content as it was when `extract` last recorded `entry`
-    (`original_sha256`), independent of whatever's on disk right now. Prefers the current
-    `jesse/static/_nuxt/<fname>` (cheap, no subprocess) and only falls back to the git HEAD
-    blob if that file has since changed out from under the manifest (e.g. an upstream
-    "Update frontend" landed) - `deploy`'s export check needs to compare against the exact
-    bytes wakaru/prettier actually ran on, not against a chunk that may have moved on.
+def original_chunk_bytes(fname: str, entry: dict, entry_chunk: str | None) -> bytes | None:
+    """The shipped chunk's UNPATCHED content as it was when `extract` last recorded
+    `entry` (`original_sha256`), independent of whatever's on disk right now. Prefers the
+    current `jesse/static/_nuxt/<fname>` (cheap, no subprocess) and only falls back to the
+    git HEAD blob if that file has since changed out from under the manifest (e.g. an
+    upstream "Update frontend" landed) - `deploy`'s export check needs to compare against
+    the exact bytes wakaru/prettier actually ran on, not against a chunk that may have
+    moved on. Both sources are stripped of patch_dashboard's page-injection patch first if
+    `fname` is the entry chunk: on disk it's normally patched (the committed, shipped
+    state), and the git HEAD blob is too (the patch is part of what's committed) - neither
+    holds the manifest's unpatched `original_sha256` verbatim once the bundle is patched.
     Returns None if neither source's sha256 matches `entry["original_sha256"]` (can't verify)."""
     shipped = STATIC_NUXT / fname
     if shipped.exists():
-        data = shipped.read_bytes()
+        data = unpatched_shipped_bytes(shipped, entry_chunk)
         if hashlib.sha256(data).hexdigest() == entry["original_sha256"]:
             return data
     data = read_git_head_blob(f"jesse/static/_nuxt/{fname}")
-    if data is not None and hashlib.sha256(data).hexdigest() == entry["original_sha256"]:
-        return data
+    if data is not None:
+        data = _unpatch_bytes_if_entry(data, fname, entry_chunk)
+        if hashlib.sha256(data).hexdigest() == entry["original_sha256"]:
+            return data
     return None
 
 
@@ -391,12 +490,28 @@ def cmd_extract(args) -> int:
             manifest[fname] = prior  # keep the existing (edited) entry untouched
             continue
         src = STATIC_NUXT / fname
-        original_text = src.read_text(errors="replace")
+        # unpatched_shipped_bytes strips patch_dashboard's page-injection patch back out
+        # of the entry chunk (its only shipped touch point) - the mirror always
+        # represents the UNPATCHED upstream bundle, never whatever's currently patched on
+        # disk. Byte-exact (strict utf-8 decode) rather than read_shipped_text's lossy
+        # errors="replace", since this is what gets fed to wakaru and, on any fallback
+        # path below, written straight back to disk as dashboard/src's own content - a
+        # lossy decode here would silently corrupt that output instead of failing loudly.
+        original_bytes = unpatched_shipped_bytes(src, entry_chunk)
+        original_text = original_bytes.decode(errors="replace")  # for export-name diffing only
         mode, reason = "wakaru", None
-        ok, log = run_wakaru(src, dst)
+        if fname == entry_chunk:
+            # wakaru/prettier shell out by file path, so they'd unminify whatever is
+            # physically on disk (patched) unless fed an unpatched copy explicitly.
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                wakaru_src = Path(tmp_dir) / fname
+                wakaru_src.write_bytes(original_bytes)
+                ok, log = run_wakaru(wakaru_src, dst)
+        else:
+            ok, log = run_wakaru(src, dst)
         if not ok:
             wakaru_failed.append(fname)
-            shutil.copyfile(src, dst)  # fallback: prettier-format the original directly
+            dst.write_bytes(original_bytes)  # fallback: prettier-format the (unpatched) original directly
             mode, reason = "prettier-only", "wakaru command failed"
         prettier_ok, plog = run_prettier(dst)
         if not prettier_ok:
@@ -409,7 +524,7 @@ def cmd_extract(args) -> int:
                 # Formatting-only regeneration can't do that, so fall back to it and treat
                 # the wakaru output as unsafe to deploy.
                 export_mismatches.append(fname)
-                shutil.copyfile(src, dst)
+                dst.write_bytes(original_bytes)
                 prettier_ok2, plog2 = run_prettier(dst)
                 if not prettier_ok2:
                     print(f"WARNING: prettier failed on {fname}:\n{plog2}", file=sys.stderr)
@@ -426,7 +541,7 @@ def cmd_extract(args) -> int:
                           "- likely a bug in export_names(), not an unsafe file.", file=sys.stderr)
                     reason += " [WARNING: mismatch persisted after prettier-only regen]"
         manifest[fname] = {
-            "original_sha256": sha256_file(src),
+            "original_sha256": hashlib.sha256(original_bytes).hexdigest(),
             "readable_sha256": sha256_file(dst),
             "mode": mode,
         }
@@ -540,6 +655,7 @@ def load_manifest() -> dict:
 
 def cmd_status(args) -> int:
     manifest = load_manifest()
+    entry_chunk = find_entry_chunk()
     edited = []
     shipped_changed = []
     for fname, entry in sorted(manifest.items()):
@@ -547,7 +663,11 @@ def cmd_status(args) -> int:
         shipped = STATIC_NUXT / fname
         if readable.exists() and sha256_file(readable) != entry["readable_sha256"]:
             edited.append(fname)
-        if shipped.exists() and sha256_file(shipped) != entry["original_sha256"]:
+        # sha256_shipped strips patch_dashboard's page-injection patch back out of the
+        # entry chunk first - manifest's original_sha256 is always the UNPATCHED hash,
+        # so comparing raw on-disk bytes here would permanently report the entry chunk
+        # as "changed" even when nothing but the (expected, committed) patch differs.
+        if shipped.exists() and sha256_shipped(shipped, entry_chunk) != entry["original_sha256"]:
             shipped_changed.append(fname)
 
     conflicts = sorted(set(edited) & set(shipped_changed))
@@ -572,6 +692,7 @@ def node_check(path: Path) -> tuple[bool, str]:
 
 def cmd_deploy(args) -> int:
     manifest = load_manifest()
+    entry_chunk = find_entry_chunk()
     targets = args.files or [
         f for f, entry in manifest.items()
         if (SRC_NUXT / f).exists() and sha256_file(SRC_NUXT / f) != entry["readable_sha256"]
@@ -597,7 +718,7 @@ def cmd_deploy(args) -> int:
         # Export-name safety net (no --force override - unlike the conflict check below,
         # there's no valid reason to ship a file that changed the chunk's public API; that's
         # exactly the wakaru bug this check exists to catch, see README "Known issue").
-        original_bytes = original_chunk_bytes(fname, entry)
+        original_bytes = original_chunk_bytes(fname, entry, entry_chunk)
         if original_bytes is None:
             print(f"REFUSE {fname}: can't locate the original shipped chunk content to verify "
                   f"exported names (neither jesse/static nor git HEAD matches manifest's "
@@ -612,12 +733,30 @@ def cmd_deploy(args) -> int:
                   f"- this would silently break an importer; no --force override for this check", file=sys.stderr)
             continue
         shipped = STATIC_NUXT / fname
-        shipped_changed = shipped.exists() and sha256_file(shipped) != entry["original_sha256"]
+        shipped_changed = shipped.exists() and sha256_shipped(shipped, entry_chunk) != entry["original_sha256"]
         if shipped_changed and not args.force:
             print(f"REFUSE {fname}: shipped file changed since extraction (conflict) - "
                   f"use --force to overwrite anyway", file=sys.stderr)
             continue
+        # The readable mirror always holds the entry chunk's UNPATCHED content, so
+        # deploying it is a two-step operation: overwrite the shipped file, then
+        # immediately re-apply patch_dashboard's page-injection patch (idempotent) so
+        # Universe Scan/Portfolio don't silently vanish from the router/sidebar. Snapshot
+        # whatever was shipped before the overwrite so a failed re-patch (a PatchError -
+        # e.g. a future "Update frontend" changed the anchor shape - or any other
+        # exception) can be rolled back instead of leaving the entry chunk unpatched on
+        # disk; the exception is then re-raised so the caller sees the failure.
+        original_shipped_bytes = shipped.read_bytes() if fname == entry_chunk and shipped.exists() else None
         shutil.copyfile(readable, shipped)
+        if fname == entry_chunk:
+            try:
+                patch_dashboard.patch(STATIC_NUXT.parent, check=False)
+            except Exception:
+                if original_shipped_bytes is not None:
+                    shipped.write_bytes(original_shipped_bytes)
+                else:
+                    shipped.unlink(missing_ok=True)
+                raise
         deployed.append(fname)
 
     print(f"Deployed {len(deployed)} file(s): {deployed}")
@@ -630,7 +769,35 @@ def cmd_revert(args) -> int:
     if data is None:
         print(f"git show failed for jesse/static/_nuxt/{fname}", file=sys.stderr)
         return 1
-    (STATIC_NUXT / fname).write_bytes(data)
+    entry_chunk = find_entry_chunk()
+    if entry_chunk is not None and fname == entry_chunk:
+        # HEAD's committed entry chunk is itself patched (patch_dashboard's page
+        # insertions are part of the committed bundle, not a local-only overlay - see
+        # dashboard/README.md). Strip that patch back out of the HEAD content, write the
+        # unpatched form, then re-derive and reapply the patch fresh against whatever's
+        # currently under jesse/static/_nuxt (the Vue-runtime chunk's resolved export
+        # alias, the page templates, ...) instead of trusting HEAD's own patched bytes
+        # verbatim - byte-identical to the committed chunk in the common case, but this
+        # stays correct even if something else under jesse/static/ moved independently
+        # since HEAD. Invariant: after revert, the entry chunk equals master's committed
+        # patched chunk (`patch_dashboard.py --check` passes).
+        target = STATIC_NUXT / fname
+        # Snapshot whatever was on disk before the write below, so a failed re-patch (a
+        # PatchError, or any other exception) can be rolled back instead of leaving the
+        # entry chunk unpatched; the exception is then re-raised so the caller sees it.
+        original_bytes = target.read_bytes() if target.exists() else None
+        unpatched_head = patch_dashboard.strip_patch(data.decode("utf-8"))
+        target.write_text(unpatched_head, encoding="utf-8")
+        try:
+            patch_dashboard.patch(STATIC_NUXT.parent, check=False)
+        except Exception:
+            if original_bytes is not None:
+                target.write_bytes(original_bytes)
+            else:
+                target.unlink(missing_ok=True)
+            raise
+    else:
+        (STATIC_NUXT / fname).write_bytes(data)
     print(f"Reverted jesse/static/_nuxt/{fname} to HEAD.")
     return 0
 

@@ -15,6 +15,32 @@ it's valid ESM with the same import specifiers and the same exported names other
 from it (`extract`'s export-name diff exists specifically to catch a broken case of this - see
 "Known issue" below).
 
+## Which tool owns what: this mirror vs. `scripts/patch_dashboard.py`
+
+`scripts/patch_dashboard.py` (see `docs/dashboard-bundle/PATCHING.md`) separately inserts extra
+pages (Universe Scan, Portfolio, ...) into the entry chunk's own route table/sidebar and owns
+every generated `*-page.js` chunk outright. The two tools split the entry chunk's ownership
+cleanly:
+
+- **This mirror (`dashboard/src/`) always represents the entry chunk's UNPATCHED upstream
+  content.** `status`, `deploy`'s "shipped changed since extract" guard, `extract`'s
+  classification/hashing, and `deploy`'s export-name safety check all strip
+  `patch_dashboard`'s page-injection patch back out of the shipped entry chunk in memory first
+  (`scripts/dashboard_src.py`'s `read_shipped_text`/`sha256_shipped` - see that script's own
+  "patch_dashboard.py interop" comment block) before reading/hashing/comparing it, so the patch
+  itself never shows up as a spurious "shipped file changed" or an export-name mismatch.
+- **`deploy` and `revert` of the entry chunk both leave the patch applied afterward.** `deploy`
+  copies the (unpatched) readable file over the shipped chunk and then calls
+  `patch_dashboard.patch()` again to reinsert Universe Scan/Portfolio; `revert` restores the
+  chunk to master's committed (already patched) content, strip-then-re-patching rather than
+  trusting the git blob's own patched bytes verbatim, so it stays correct even if something else
+  under `jesse/static/` moved independently. After either, `python scripts/patch_dashboard.py
+  --check` must pass.
+- **Generated `*-page.js` chunks (`patch_dashboard.PAGES`) are excluded from this mirror
+  entirely** - never classified APP or VENDOR, never hashed into `manifest.json`. They're
+  hand-written templates under `jesse/dashboard_patches/`, not compiled Vite output, so they
+  have no place in a mirror of the *compiled* bundle.
+
 ## How chunks are classified (APP vs VENDOR)
 
 `scripts/dashboard_src.py`'s `classify_chunks()` marks a `_nuxt/*.js` chunk **APP** if it

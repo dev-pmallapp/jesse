@@ -136,8 +136,8 @@ def test_missing_anchor_raises_patch_error(unpatched_static_dir):
     """If a future bundle no longer contains the significance-test route record at
     all, the patcher must fail loudly, not silently skip the route insertion."""
     entry_path = patch_dashboard.find_entry_chunk(unpatched_static_dir)
-    mutated = entry_path.read_text(encoding='utf-8').replace(
-        patch_dashboard.SIGNIFICANCE_TEST_ROUTE_ANCHOR, 'path:`/significance-test-renamed`,'
+    mutated = patch_dashboard.SIGNIFICANCE_TEST_ROUTE_RE.sub(
+        'path:`/significance-test-renamed`,', entry_path.read_text(encoding='utf-8')
     )
     entry_path.write_text(mutated, encoding='utf-8')
     with pytest.raises(patch_dashboard.PatchError):
@@ -218,7 +218,7 @@ def _patch_only_universe_scan_via_legacy_marker(static_dir):
         f',{patch_dashboard.LEGACY_MARKER}{{name:`universe-scan`,path:`/universe-scan`,'
         f'component:()=>import(`./universe-scan-page.js`)}}'
     )
-    start = entry_text.index(patch_dashboard.SIGNIFICANCE_TEST_ROUTE_ANCHOR)
+    start = patch_dashboard.SIGNIFICANCE_TEST_ROUTE_RE.search(entry_text).start()
     end = patch_dashboard.find_balanced_object_end(entry_text, start)
     entry_text = entry_text[:end] + route_insertion + entry_text[end:]
 
