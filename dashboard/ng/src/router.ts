@@ -24,6 +24,9 @@ export interface NgRoute {
   name: string;
   path: string;
   params: Record<string, string>;
+  // Query string as plain strings (repeated keys: last one wins) - e.g. `?basket=` lets
+  // basket pages deep-link into Scan/Portfolio with that basket preselected.
+  query: Record<string, string>;
 }
 
 export type MatchResult = { redirect: string } | { route: NgRoute };
@@ -68,16 +71,18 @@ function matchSegments(defSegments: string[], pathSegments: string[]): Record<st
  * ever tell it where a redirect should land (see entries/india.ts). Unmatched paths
  * under /india/* resolve to a `not-found` route name with no component. */
 export function matchPath(path: string): MatchResult {
-  const raw = path.split('?')[0].split('#')[0];
+  const [beforeHash] = path.split('#');
+  const [raw, search = ''] = beforeHash.split('?');
+  const query = Object.fromEntries(new URLSearchParams(search));
   if (raw === '/india' || raw === '/india/') {
     return { redirect: '/india/stocks' };
   }
   const segments = raw.split('/').filter(Boolean);
   for (const def of ROUTE_DEFS) {
     const params = matchSegments(def.segments, segments);
-    if (params) return { route: { name: def.name, path: raw, params } };
+    if (params) return { route: { name: def.name, path: raw, params, query } };
   }
-  return { route: { name: 'not-found', path: raw, params: {} } };
+  return { route: { name: 'not-found', path: raw, params: {}, query } };
 }
 
 export function pageComponentFor(name: string): Component | null {

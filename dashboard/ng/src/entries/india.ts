@@ -30,10 +30,10 @@ function ensureNgCss(): void {
  * in this project. */
 export interface NgMountContext {
   router: {
-    currentRoute: { value: { path: string } };
+    currentRoute: { value: { path: string; fullPath: string } };
     push: (path: string) => unknown;
     replace: (path: string) => unknown;
-    afterEach: (cb: (to: { path: string }) => void) => () => void;
+    afterEach: (cb: (to: { path: string; fullPath: string }) => void) => () => void;
   };
 }
 
@@ -52,7 +52,7 @@ export function mount(el: HTMLElement, ctx: NgMountContext): NgMountHandle {
   // reactivity graph; reading a value out of it into our own ref (rather than holding a
   // live reference into it) is what keeps this app decoupled from that graph's own
   // internal shape, which can change across an upstream dashboard rebuild.
-  const routeRef: Ref<NgRoute> = ref<NgRoute>({ name: '', path: '', params: {} });
+  const routeRef: Ref<NgRoute> = ref<NgRoute>({ name: '', path: '', params: {}, query: {} });
 
   function applyPath(path: string): void {
     const matched = matchPath(path);
@@ -70,14 +70,14 @@ export function mount(el: HTMLElement, ctx: NgMountContext): NgMountHandle {
     ctx.router.push(path);
   }
 
-  applyPath(ctx.router.currentRoute.value.path);
+  applyPath(ctx.router.currentRoute.value.fullPath);
 
   const app: VueApp = createApp(AppRoot);
   app.provide(NG_ROUTE_KEY, routeRef);
   app.provide(NG_NAVIGATE_KEY, navigate);
   app.mount(child);
 
-  const unsubscribe = ctx.router.afterEach((to) => applyPath(to.path));
+  const unsubscribe = ctx.router.afterEach((to) => applyPath(to.fullPath));
 
   return {
     unmount() {
