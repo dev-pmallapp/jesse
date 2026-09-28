@@ -219,8 +219,8 @@ def _copy_patched_static_dir(ds, dest: Path) -> tuple[str, Path]:
     vue_chunk_path, _ = ds.patch_dashboard.find_vue_runtime_chunk(real_static)
     shutil.copyfile(vue_chunk_path, dest / "_nuxt" / vue_chunk_path.name)
 
-    for page in ds.patch_dashboard.PAGES:
-        shutil.copyfile(real_static / "_nuxt" / page.chunk_name, dest / "_nuxt" / page.chunk_name)
+    for route in ds.patch_dashboard.ROUTES:
+        shutil.copyfile(real_static / "_nuxt" / route.chunk_name, dest / "_nuxt" / route.chunk_name)
 
     return entry_chunk, dest
 
@@ -272,11 +272,11 @@ def test_deploy_of_entry_chunk_keeps_both_pages(ds, tmp_path, monkeypatch):
 
     deployed_entry = static_dir / "_nuxt" / entry_chunk
     assert marker.strip() in deployed_entry.read_text()
-    # The deploy must have re-applied patch_dashboard's patch afterward, so both pages
-    # are still present and up to date.
+    # The deploy must have re-applied patch_dashboard's patch afterward, so the India
+    # route's generated chunk is still present and up to date.
     assert ds.patch_dashboard.patch(static_dir, check=True) is True
-    for page in ds.patch_dashboard.PAGES:
-        assert (static_dir / "_nuxt" / page.chunk_name).exists()
+    for route in ds.patch_dashboard.ROUTES:
+        assert (static_dir / "_nuxt" / route.chunk_name).exists()
 
 
 def test_revert_of_entry_chunk_restores_committed_patched_chunk(ds, tmp_path, monkeypatch):
@@ -305,9 +305,9 @@ def test_generated_page_chunks_are_excluded_from_classification(ds):
     they must never be classified (APP or VENDOR) or enter manifest.json."""
     classification = ds.classify_chunks()
     manifest = json.loads(ds.MANIFEST_PATH.read_text())
-    for page in ds.patch_dashboard.PAGES:
-        assert page.chunk_name not in classification
-        assert page.chunk_name not in manifest
+    for route in ds.patch_dashboard.ROUTES:
+        assert route.chunk_name not in classification
+        assert route.chunk_name not in manifest
 
 
 def test_deploy_of_entry_chunk_is_atomic_on_repatch_failure(ds, tmp_path, monkeypatch):

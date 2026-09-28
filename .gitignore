@@ -156,3 +156,7 @@ pyrightconfig.json
 # Claude Code per-machine files
 .claude/settings.local.json
 .claude/HANDOFF.md
+
+# dashboard/ng (Vite/Vue/TS source for the India dashboard pages) - build output goes to
+# jesse/static/ng/, which IS committed; only the installed npm packages are not.
+dashboard/ng/node_modules/

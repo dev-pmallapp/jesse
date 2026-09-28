@@ -524,3 +524,38 @@ class PortfolioRunRequestJson(BaseModel):
 
 class PortfolioRunDeleteRequestJson(BaseModel):
     id: str
+
+
+# =============================================================================
+# Equities dashboard (dev-pmallapp/jesse#103ish - stock search/detail/candles)
+# =============================================================================
+
+class EquitySearchRequestJson(BaseModel):
+    query: str
+    # None searches both NSE and BSE; the controller rejects anything else.
+    exchange: Optional[str] = None
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class EquityStockRequestJson(BaseModel):
+    symbol: str
+    exchange: str = 'NSE'
+
+
+class EquityCandlesRequestJson(BaseModel):
+    symbol: str
+    exchange: str = 'NSE'
+    timeframe: str = '1D'
+    # None on either end defaults to the whole imported range (see the controller).
+    start_date: Optional[str] = None
+    finish_date: Optional[str] = None
+
+
+# =============================================================================
+# Baskets (index/mutual-fund member groups backing the equities dashboard)
+# =============================================================================
+
+class BasketGetRequestJson(BaseModel):
+    id: str
+    as_of: Optional[str] = None
+    refresh: bool = False

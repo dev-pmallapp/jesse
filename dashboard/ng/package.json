@@ -1,0 +1,21 @@
+{
+  "name": "jesse-dashboard-ng",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Structured Vue 3 source for the India (NSE/BSE) pages injected into the prebuilt Nuxt dashboard - see README.md.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-vue": "^6.0.9",
+    "tailwindcss": "^4.3.3",
+    "typescript": "5.9.3",
+    "vite": "^8.3.1",
+    "vue": "^3.5.43",
+    "vue-tsc": "^3.3.11"
+  }
+}
