@@ -97,17 +97,30 @@ def marker_for(page: Page) -> str:
 # marker - see PATCHING.md.
 LEGACY_MARKER = '/*jesse-universe-scan-patch*/'
 
-# Anchor for the route table: this is the literal, stable prefix of the
-# `significance-test` route record vue-router's route array (`_a` today, but that
+# Anchor for the route table: this is the stable `name`/`path` key pair of the
+# `significance-test` route record in vue-router's route array (`_a` today, but that
 # array's own variable name is not something we rely on - we splice in right after
 # this record wherever it happens to live). See REVERSE_ENGINEERING.md ยง1.
-SIGNIFICANCE_TEST_ROUTE_ANCHOR = '{name:`significance-test`,path:`/significance-test`,'
+#
+# `\s*` around every delimiter (not a literal string) so this matches both the shipped
+# minified shape (`{name:\`significance-test\`,path:...`, no whitespace at all) and the
+# prettier-formatted shape `dashboard/src/`'s readable entry-chunk mirror ships as
+# (`{ name: \`significance-test\`, path: ..., ` with a space after every `:`/`,` and
+# possibly a newline before the record's own `{`) - `scripts/dashboard_src.py deploy`
+# can copy that readable file verbatim over this exact file (see dashboard/README.md),
+# so this anchor must survive both.
+SIGNIFICANCE_TEST_ROUTE_RE = re.compile(
+    r'\{\s*name:\s*`significance-test`,\s*path:\s*`/significance-test`,\s*'
+)
 
 # Anchor for the sidebar `Nav` component's item array: the "Rule Test" row is a plain,
 # un-nested object literal, so a single regex capturing its icon-component variable
 # name is enough (no brace-balancing needed, unlike the route record above, whose
-# `component:()=>...` value contains nested `(){}[]`). See REVERSE_ENGINEERING.md ยง2.
-RULE_TEST_NAV_RE = re.compile(r'\{name:`Rule Test`,to:`/significance-test`,icon:([A-Za-z0-9_$]+)\}')
+# `component:()=>...` value contains nested `(){}[]`). Whitespace-tolerant for the same
+# reason as the route anchor above. See REVERSE_ENGINEERING.md ยง2.
+RULE_TEST_NAV_RE = re.compile(
+    r'\{\s*name:\s*`Rule Test`,\s*to:\s*`/significance-test`,\s*icon:\s*([A-Za-z0-9_$]+),?\s*\}'
+)
 
 # Content-anchor for Vue's `createElementVNode` (= `createBaseVNode` called on the
 # "is element" fast path) inside the (per-build-renamed) Vue-runtime chunk. Vue's own
@@ -246,13 +259,13 @@ def patch_routes(entry_text: str, pages: tuple[Page, ...] = PAGES) -> tuple[str,
     if not missing_pages:
         return entry_text, changed
 
-    count = entry_text.count(SIGNIFICANCE_TEST_ROUTE_ANCHOR)
-    if count != 1:
+    route_matches = list(SIGNIFICANCE_TEST_ROUTE_RE.finditer(entry_text))
+    if len(route_matches) != 1:
         raise PatchError(
             f"expected exactly one occurrence of the significance-test route anchor "
-            f"{SIGNIFICANCE_TEST_ROUTE_ANCHOR!r}, found {count}"
+            f"({SIGNIFICANCE_TEST_ROUTE_RE.pattern!r}), found {len(route_matches)}"
         )
-    anchor_start = entry_text.index(SIGNIFICANCE_TEST_ROUTE_ANCHOR)
+    anchor_start = route_matches[0].start()
     end = _insertion_point(entry_text, pages, missing_pages, 'path', anchor_start)
 
     insertion = ''.join(

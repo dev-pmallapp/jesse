@@ -1,0 +1,333 @@
+{
+  "1lwvrZu5.js": {
+    "mode": "wakaru",
+    "original_sha256": "b649cde27069a9022a1c36283f96a107e0b387e710fd616ff5bc0040cc6e0bb5",
+    "readable_sha256": "2b6d02c02075ce8ab5c59771431b3c350a42bc78eed9ee9ef4ab82e5437b7e94"
+  },
+  "1uxVtXhK2.js": {
+    "mode": "wakaru",
+    "original_sha256": "6875b98491ebb967846d5fe19cb7b09a157f2f9caa126613b90caa72c6a069a0",
+    "readable_sha256": "47bdb6b6445df78a9b73315f2eb9f7ff90e5c33410c8c09c60784aef83565f01"
+  },
+  "6hrdeXKO.js": {
+    "mode": "wakaru",
+    "original_sha256": "cb534f52ee92d73b7e923c5c08fa151b0c50b1e0d2e2fc92d55d93bd3645a80e",
+    "readable_sha256": "7c1a4ff1a35f50c7649a29ea97d780c892fab3996e5f8d9b7bbed23ed2e19ea9"
+  },
+  "B8_r5oP7.js": {
+    "mode": "prettier-only",
+    "original_sha256": "6eac6dc360f213babffef334f1418865f31f0c27647f34572d379d8417941852",
+    "readable_sha256": "46e1b6855da44a6b8e69cf25b3804ed3a28afc51942aab3395e2921a6cf379a4",
+    "reason": "wakaru changed exported names (only in original: ['S'], only in wakaru output: [])"
+  },
+  "B9MRSN3q2.js": {
+    "mode": "wakaru",
+    "original_sha256": "105fb0e1568b25f0f752c4a21aed04f3c48a61cd020a2145f721f652a8813f9d",
+    "readable_sha256": "3ac065334ffa20ba5f8b9fb6a20c090744e8b957e418cb5b9bb4ef40da4dfc7f"
+  },
+  "BLCaNkgi.js": {
+    "mode": "wakaru",
+    "original_sha256": "30e29d40628e6221c507b81b6373f7f20449fb3414aca447738abf6ec67d62cb",
+    "readable_sha256": "b96e1029774419836236f4dbd6a12927f7eb7cd322f8742c34852f5817edd6f6"
+  },
+  "BYsxK_gZ.js": {
+    "mode": "wakaru",
+    "original_sha256": "224f4f35e13874c760811be6784bee38340922518a907d03d719fbb2b40dd948",
+    "readable_sha256": "b2b199a770dbc978c04204f1c849eadeb88981025b2aa0ed5a07c7ef907ce367"
+  },
+  "B_-2JulU.js": {
+    "mode": "wakaru",
+    "original_sha256": "bc145fc40bcab43e8377bf19653eaf4215e8d9cb9eca75d84ef230ee98b0989f",
+    "readable_sha256": "bc80d0a788766d33a794aab485a3da9bbe320421e1f30e5987b4f2d7b13f81ba"
+  },
+  "BapWjBt9.js": {
+    "mode": "wakaru",
+    "original_sha256": "e804b7bc350c24d5889aa641f563f2cfab348602c23663ce46c41ab738fc28ba",
+    "readable_sha256": "97d1d320b694d089170345e10d3658d535b09340e3d1c87e3cde3cac619202b0"
+  },
+  "BcJ0KAXG.js": {
+    "mode": "wakaru",
+    "original_sha256": "b092a62e8a72043780101a81ca4627e8029f1edb573889d83c07a16910cc9446",
+    "readable_sha256": "e2ef29a68affcadb6d20c71a1a5d5873b6c2984fece72b34abcf1e3b8def5f84"
+  },
+  "Bmbr8zF3.js": {
+    "mode": "wakaru",
+    "original_sha256": "9d915f9363a735e446a24b9cbfa454aa1f749e8eda7f5be07ca5cec1d7fa2ba0",
+    "readable_sha256": "9111fb2e26925447b8e406ea3f9d41681d0892253eb3b0de5c6adde2defd6ecd"
+  },
+  "Bnr-Ft3Y.js": {
+    "mode": "wakaru",
+    "original_sha256": "f9f2c551ce1568df1e7967519fd59e23481dbc04fe0078af915e647ccdb7f253",
+    "readable_sha256": "e0d903f067f3ae9a37538fc93063e21fdce66aa0f2e8d904ebc83451f917c80b"
+  },
+  "BpJ9fpSU.js": {
+    "mode": "wakaru",
+    "original_sha256": "26e0781455746b39ee28c5edc65bca3aba3b0ddf04b05c73a521519673579826",
+    "readable_sha256": "22ed202616a975afb888e0c548818bbc2766f78df3c3c712e52953f917e2d67f"
+  },
+  "BqJ9I9M42.js": {
+    "mode": "wakaru",
+    "original_sha256": "3dca78bf5031e1b2dddbeada8ffd6610c561f531222520aac29f877f1a57ed5c",
+    "readable_sha256": "7c753e10e420f86ba01e558b29863d50a88760fec154ced9ff7fe38e49de1721"
+  },
+  "BvwLaU7c.js": {
+    "mode": "wakaru",
+    "original_sha256": "327347940c30107a6c9bc3cb9797083913a7ed250d85804dd4b72eacc5d6e11d",
+    "readable_sha256": "92b07ca22808031083fec0c52c318d727a5bd4f0e1857975a6822ccb287edb2a"
+  },
+  "Bw1-c76v.js": {
+    "mode": "wakaru",
+    "original_sha256": "687f7d907fa7e08a8a4c16453863faad45b0084096012cf0832f4455bb9a0481",
+    "readable_sha256": "c24fe4541c10fc59a5fb89404a28fa8e5542d8c493a8427448b011853f350139"
+  },
+  "C-69Y6Pu.js": {
+    "mode": "wakaru",
+    "original_sha256": "d3c41f6770d16e7b70c300de3243c9c51bfa93dad99dffe953e15b09c1272380",
+    "readable_sha256": "d6b2215682987ef2b69d3cf50c76e2041fff0ea83324d353954e6d7f211b4911"
+  },
+  "C2shJFxU.js": {
+    "mode": "wakaru",
+    "original_sha256": "7c7e12ef7837e35747fafea792ca8530a63e675ef4c5cb86e11a621a2a96c773",
+    "readable_sha256": "6a1e01d35d4656e2310de0af046ee6a7993f8970e674c5f4500da835276898c7"
+  },
+  "C3oCr-8k2.js": {
+    "mode": "wakaru",
+    "original_sha256": "c8fb36fa69df88827a994636cd748841a3372e20fe7aa03ba20c1fbb14eb5b71",
+    "readable_sha256": "5ba5eae8420b35dc40248277ea720eebe9cbdeea2ceb2bc8092d50ca63e07791"
+  },
+  "C5kJGiKi2.js": {
+    "mode": "wakaru",
+    "original_sha256": "54274131099883328a257785e7f5fd15a3d40a5a12370b1b377d9fb426949e28",
+    "readable_sha256": "a2bb724053395f7550ff12a2665eb669d09abb4e3f5eae5df507b51b50e2f6ba"
+  },
+  "C8q3xVCB.js": {
+    "mode": "wakaru",
+    "original_sha256": "ef33dfcfe27cddd7c19f0be71859d5f16e2646ca1a14bcb526d70a64d02808d2",
+    "readable_sha256": "31e306a8dba4c8ce9c197ee5330f91789489ef1bad1552cb884843c5d255a229"
+  },
+  "C96bnRGM.js": {
+    "mode": "wakaru",
+    "original_sha256": "3444314dff22ff1358eb0c88cfcdea8672add1872d35b7dd947ef8eb1ea04ada",
+    "readable_sha256": "189158fdeef55a90357b6457a3950e630877695bb04fb8df4f2cec6f26d8bde7"
+  },
+  "C9St-qHN.js": {
+    "mode": "wakaru",
+    "original_sha256": "3c6311039e01e372cc06d4a38ebbace5848d1482f55066a75787d6740452a273",
+    "readable_sha256": "cd220a1a3ef346df6f1f83bfd6ee077d9bca2e4007800d28e9b7450be6ac395f"
+  },
+  "CD78tava2.js": {
+    "mode": "wakaru",
+    "original_sha256": "35ed18dd76ac2f40d1a06438429c27b33152d58739f5f5724519bdda2bab9154",
+    "readable_sha256": "c41b0858fbba98e6a6f2e472f336511648ce11cb7facd13b72a700ab88264aae"
+  },
+  "CJ5SUZOH2.js": {
+    "mode": "wakaru",
+    "original_sha256": "8cb1a081eee7c156b9ae40e7ea537b117a3abb9c71dd06b0492a087dafd1c480",
+    "readable_sha256": "fff0c59aa461df2e009779e259719c014e9ffe1be2428291388853c089a76aa0"
+  },
+  "CQUMS8QJ2.js": {
+    "mode": "wakaru",
+    "original_sha256": "f77ec91142900e1fea13c98c6b2455f8980f3d2de249a1b905660383cb4d3607",
+    "readable_sha256": "7eae5d8b709a27782ec2bb3833edb7a3e2d7d42c4cb4d7a2c25c9ae4757001fa"
+  },
+  "CUL-_UXV2.js": {
+    "mode": "wakaru",
+    "original_sha256": "0e40262309ad863051bf34174556a47d3791a9e7a3af4df35e6c201780e7d76b",
+    "readable_sha256": "76c5c7dae361616bfd0715baf186a565ca33f1553e15560555f4672941097c12"
+  },
+  "CZ3SG3_I2.js": {
+    "mode": "wakaru",
+    "original_sha256": "685b60fde3224c749260fe9c2d698fd3c9b4328614516e4bc8e75a67fa889fdf",
+    "readable_sha256": "e8bb5171368f94d909e3259744f6f9d7717c62014c5c1007643ee90f7c6019d4"
+  },
+  "CZymKofZ2.js": {
+    "mode": "wakaru",
+    "original_sha256": "ec5cb3a4f224e38958a5adb54691d15aa9dac2f3a6bc93a5893a7c7fcc7c51c2",
+    "readable_sha256": "14299ae89eea8f16338f71237707264b03ff83347909f2aca9ce1d03809c0cc3"
+  },
+  "CbdYpKc9.js": {
+    "mode": "wakaru",
+    "original_sha256": "4187ef0dac5cc26066cdc3dfeee75fc0f92f9ad61898d3b3dc7c8f1df8f645d2",
+    "readable_sha256": "5faf53910473b0e8a65aa10414d85b25e91f33c734dcfb38353e5422d7f4449c"
+  },
+  "CcEz-6AP2.js": {
+    "mode": "wakaru",
+    "original_sha256": "72f42e9b8b03ead8297c7909916aa83b57ed8382e7e6dc7fdbe1e2e5b09e7c12",
+    "readable_sha256": "681ecf61abdfedc88834831b10f2151fab3c0d70b85c4417f252a5b3b4aa5726"
+  },
+  "Cuy4t56v.js": {
+    "mode": "wakaru",
+    "original_sha256": "3a7dc6d25eefe734154cfe922f18e0c6ce6eb73ec2f7ac7974d55631f88adb6e",
+    "readable_sha256": "88faff30810c447f61730bdb5695e32817096a99b7743f77fabbc2662102ce73"
+  },
+  "CyiiZBUN2.js": {
+    "mode": "wakaru",
+    "original_sha256": "b1c497bfc405fe5c4f0490370bcb0a9659593d9b762a869b72e1536775f206d1",
+    "readable_sha256": "885aaf5cb4f29bdb8681a302165823ec1824da4181b9955fe4a034e526209f82"
+  },
+  "D2mw--Fl2.js": {
+    "mode": "wakaru",
+    "original_sha256": "41b28b5616bbb0fae660e2ab7f8bb8a2e0f8bab69eddcd225ce8e77824551dcc",
+    "readable_sha256": "cdc2bd68f58930fbb8a19d4ffa8215652a9ea7153a01dbafafeeb763bb731bc3"
+  },
+  "D5Z5IiLY2.js": {
+    "mode": "wakaru",
+    "original_sha256": "775838e95f2f11f0b57c5506798edfde863bf64374e5ab6a0057dc07599bc381",
+    "readable_sha256": "6e909b5c7ab26418ee4a4dfe842e257b7cdc6c1396e02d319f6931364fbb5350"
+  },
+  "DEJw_qiA2.js": {
+    "mode": "wakaru",
+    "original_sha256": "c72b9e7e7f23f4a8fcd712e638b15727c1c179196bc61a5854522fa6a356a170",
+    "readable_sha256": "e91d698526fa4fa9e6c47843063998d64bcf56dde0bfe71206bcff6ead4e3b08"
+  },
+  "DKSmMEZa2.js": {
+    "mode": "wakaru",
+    "original_sha256": "112368d2442f89fe870efef1571895803f6a8e36ee0ac303ef765d77e30b40a0",
+    "readable_sha256": "477a64b903071cd2b9138785544ad2c8b22e2290fc2278ff72f96e4b1665643f"
+  },
+  "DNB37k3h2.js": {
+    "mode": "wakaru",
+    "original_sha256": "2a0ed4c7b8a698382f025c965ad15db095f205f795237e6810f5e6f63cc27e34",
+    "readable_sha256": "ce59e597e9516bc1fd23b712c3617d558145d4f55786b37a625fc22d7eab36c9"
+  },
+  "DOgf9of5.js": {
+    "mode": "wakaru",
+    "original_sha256": "8e823fb4887999bf7c6cb9e58510fc4a903f9d0205d7c99f92b9c5e79d25e9d3",
+    "readable_sha256": "f2e6e85e006a8c9382f988514caf006ba98f73fa5d0ad527dfc5ef0495ebe5b5"
+  },
+  "DP8dx3Mz.js": {
+    "mode": "wakaru",
+    "original_sha256": "f2191fc33688f4f45cd437aab22aafea56e1c46beca4826a028194b90af79b28",
+    "readable_sha256": "4e97228b87f4ae38bf7b254b1f05269f2651b2501c5d3d3815db318c9d98456e"
+  },
+  "DY43dlCC.js": {
+    "mode": "wakaru",
+    "original_sha256": "3ad053285608067771f560e92112f02970f5900cf0e54601f7f9e5121643e919",
+    "readable_sha256": "489c01fb236b06ab7cbad06de8e5ecd1c0f5f360855ca63611cba61a98349917"
+  },
+  "DZsh6Vsl2.js": {
+    "mode": "wakaru",
+    "original_sha256": "af97c69e4f6af3dd69b7c20b513b81d5d0e107f1fed25b46be455c774a51388b",
+    "readable_sha256": "775f0de42aeab125eeb8fd64202401d746ff3d07c5df196045e8671330d07333"
+  },
+  "D_3yiDAS.js": {
+    "mode": "wakaru",
+    "original_sha256": "37486df4215755553e1d1bef86111c60e8111773c54cdce9f8d13b3eb7b85c91",
+    "readable_sha256": "5ef9ed933154132f4a6e90ab58a1a28c96123ba0bc4ebe1f7e0469fde161f88d"
+  },
+  "DcUUodPk.js": {
+    "mode": "wakaru",
+    "original_sha256": "3c84d9d6bfb09798f1d89172f9d70225dbfe7e4a1ef98be201c42edf31e3152c",
+    "readable_sha256": "b0d99ba8f097c4521417f1529826be96e09c52b98bdfea29c4682eea24b40f7b"
+  },
+  "DljXZpSz.js": {
+    "mode": "wakaru",
+    "original_sha256": "ad68cb4de7fc3ce5396165c15fde38bbfde7491a6edd08b7174ca25381cb7b2f",
+    "readable_sha256": "ef1dcf993b95919190001612244e86c6a21996d5207047aeb7a3fa6dec6dc7f8"
+  },
+  "Dp-2asp4.js": {
+    "mode": "wakaru",
+    "original_sha256": "e438070192f72df1532a08312387626e9ef2b0d4f9b37bf6f7d8637c8f490ea5",
+    "readable_sha256": "c927327dcbb94cbee1c9c54864ec5c3c3a85164725a08c371f2097189721ca7d"
+  },
+  "DqT4cj-J.js": {
+    "mode": "wakaru",
+    "original_sha256": "a64abade09524cd321d8e35e29e1bf51d8c3827b17c3594e63553806a5744e50",
+    "readable_sha256": "20d0058ab986e1336bfc433b4aa99faee88f00d964af0d1c3585fcd69754d1f4"
+  },
+  "DtGle1nz2.js": {
+    "mode": "wakaru",
+    "original_sha256": "dae43a5ce7342ec1785303b2f5c3dca557c14e136c8eebcaaaf57aec86552bdb",
+    "readable_sha256": "00173938cb09acf48a4d613f8c351ebbfb20ef9373393129ddec08d2f4b93a17"
+  },
+  "DuT2u1M92.js": {
+    "mode": "wakaru",
+    "original_sha256": "949a1e86723f985efac1d1be845933684ff6f4382525b7c97ab91e816a45cf4c",
+    "readable_sha256": "a8128861df4fa39cbfcf46c476b4f0d9f5b78e3cbfbaadd05d8b3aab544cd17b"
+  },
+  "EZH7P6f9.js": {
+    "mode": "wakaru",
+    "original_sha256": "1092843618e5eafafa0803499834f5e7cfe1dbd3a294c5295c82fc57ae63f29f",
+    "readable_sha256": "0ef975e46a2fdb5851fd4ea63e6857003329818ddfa073cdf684399039278782"
+  },
+  "FIalSC7A.js": {
+    "mode": "wakaru",
+    "original_sha256": "f79a744cf144c9be9a4efe5df6cbb9d08c7fb8e4a220c8a3662164e1cd795ff9",
+    "readable_sha256": "5f774cfb5f18ee23502b719c63947833b59cd3fd21ddeca9990bc4002619c2ee"
+  },
+  "JgXkd7uo2.js": {
+    "mode": "wakaru",
+    "original_sha256": "2860a4a618d23594a0e850dff39a6a4679b417839335fa529e59fcf26e424a9a",
+    "readable_sha256": "20bdeacf618c5de3026aef818464e2c5ad38f6cd378eb50ed1de3fff8d264160"
+  },
+  "KhqzbbC32.js": {
+    "mode": "wakaru",
+    "original_sha256": "a9e4b1721a59fa49b82aaa9deb7a5e53f4265190ba05303d7bf79eca63b1940a",
+    "readable_sha256": "827de10734c9b02f95f83d3120da29d2de7cca433c1ce0458cea5ef617adbe84"
+  },
+  "O1vzaDvk2.js": {
+    "mode": "wakaru",
+    "original_sha256": "abd51cf6abe9f5dcaa75ab997d1713e8e52ddc66d6598208689ed58561d74d0a",
+    "readable_sha256": "12dd6a982c7e91d8e800a3961e3d1131a78862061af7bcd10d915e8892ac8557"
+  },
+  "OfUAv67B2.js": {
+    "mode": "wakaru",
+    "original_sha256": "703fb0f4c7ee327b06b66e654870c912cd6ea4ab75edcbf3ed9be4e5c8fa153d",
+    "readable_sha256": "d211d69f44af1f3097da16942bdf9f20ce43bd0ae544730746e1c629cc638e39"
+  },
+  "VuUr933P2.js": {
+    "mode": "wakaru",
+    "original_sha256": "ae45d084b68d2340f8eb4effb135de7de0d222e2b7459f123ac8e4f6e66e3e01",
+    "readable_sha256": "8b3a37d6d6033a056bf48fb6b890db4d71544867dbfba8ac12066cb00a43bc4b"
+  },
+  "WA2gHESr.js": {
+    "mode": "wakaru",
+    "original_sha256": "b774d7fad7c1adc906c8be079c506fd9099cc9b8cbe77da156d2699eb8746f6e",
+    "readable_sha256": "2094d1934b3046235a620831982b5eab9c5b4b98910c687352637690a0cbae75"
+  },
+  "aQXfN9KN.js": {
+    "mode": "wakaru",
+    "original_sha256": "b2be1c0b158fc891bf0215786d1959ec9f7d5dc891221d67586ffd417aa90ac9",
+    "readable_sha256": "5b13314147d2d15b936b6cb6002098b5a81a6effce69007ddd4a8599d6c52abe"
+  },
+  "atteXEGs.js": {
+    "mode": "wakaru",
+    "original_sha256": "7da5094886568247097ee6cd8a46524fabdbfb7b40ab4966b5abf65a096c8cc5",
+    "readable_sha256": "447509f398fc0ac3f71a118fc7c8dd4bdfd41cdc83b6554e903708b0a5c6428c"
+  },
+  "ccMIPn_w.js": {
+    "mode": "wakaru",
+    "original_sha256": "dd3260663f46b2e89cb681215facd2a4e242a5f8bb1f4026e71bfe3d19f36287",
+    "readable_sha256": "4e3c7e2c2c328aee6c6c9190cebc9dd2783bb31d114a49b0c617fea6b506ff9e"
+  },
+  "coSIg_O3.js": {
+    "mode": "wakaru",
+    "original_sha256": "b35e1d6b9cc6cc225925e9d9f934c55e22ff531108aeb6e553729c29b3159d45",
+    "readable_sha256": "6415ac242f008a0af70a3b752a53f6604d032dc4e92a93c9cb7a7712eb31f6c8"
+  },
+  "gG0NvZLm2.js": {
+    "mode": "wakaru",
+    "original_sha256": "d562ddcf06b6c23f010b944d98544c377205bab3a8275fef0a18b97cfbe90bf3",
+    "readable_sha256": "481133fed56b55e591701e4097568d0916d0293b3f63111fe37db27ff11e7e66"
+  },
+  "mAYmvPyL.js": {
+    "mode": "wakaru",
+    "original_sha256": "c1986ec7efdd6058cc5352d4510919dd6754aff555fd4f0c29db0626bea34ddd",
+    "readable_sha256": "dc88512fffcda89e7613e3472903fa83de5f4e366471fe23f66847aec7fa8d74"
+  },
+  "qBoaT7Fk2.js": {
+    "mode": "wakaru",
+    "original_sha256": "a4cfa69b77e035c670522e1cfd3b5d48498ff580a18965ba5054bfd4c6359bdf",
+    "readable_sha256": "b542501bfd459ab7c2e6212ad37ee14868152fa0c4903d3c37cde382cbdadd85"
+  },
+  "rHIqefrb.js": {
+    "mode": "wakaru",
+    "original_sha256": "703bb1d596cc994944b6648e536df235240448782d4fe295b04e12d5aedae6bb",
+    "readable_sha256": "90cec5a972a568b9b0918fdba8dd9d36411b23e5a7357a1c62238bb103735ffb"
+  },
+  "xse2Sllu2.js": {
+    "mode": "wakaru",
+    "original_sha256": "aea60fbe74da7721948519f4552e292f3c4385a186dfb450e25a981f2936c1e1",
+    "readable_sha256": "ff4f722e2a0cf091b9afc72902757409b163c9ce6881f712ec79d0b05ed1a777"
+  }
+}

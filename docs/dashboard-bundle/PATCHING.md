@@ -12,6 +12,20 @@ Portfolio, ...; the full, current list is `patch_dashboard.PAGES`) - the route +
 sidebar entry inside the entry chunk, and the hand-written page chunk that route points
 at - has to be re-applied after every such commit.
 
+## Which tool owns what: this patcher vs. `dashboard/src/`
+
+`dashboard/src/` (see `dashboard/README.md`) is a separate tool that keeps a readable
+mirror of the Jesse-owned chunks of the compiled bundle, and it always mirrors the
+entry chunk's **UNPATCHED** content - not whatever this script currently has inserted
+into it. Its `scripts/dashboard_src.py status`/`deploy`/`extract` strip this script's
+patch back out of the shipped entry chunk in memory (via `patch_dashboard.strip_patch`)
+before ever hashing/comparing/reading it, so the patch never shows up there as a
+spurious "shipped file changed". `deploy`/`revert` of the entry chunk through that
+script both leave this patch re-applied afterward (calling `patch()` again), so `python
+scripts/patch_dashboard.py --check` keeps passing no matter which tool last touched the
+entry chunk. Generated `*-page.js` chunks are this script's alone - `dashboard/src/`
+excludes them from its mirror/classification entirely.
+
 ## When to re-run
 
 Any time `jesse/static/` changes as part of an "Update frontend" commit (check
@@ -60,7 +74,7 @@ reshuffle. To fix it:
    nav anchor, or the `__v_isVNode:!0,__v_skip:!0` object-literal shape for the Vue
    runtime chunk) and see what changed around it.
 3. Update the corresponding constant/regex in `scripts/patch_dashboard.py` (e.g.
-   `SIGNIFICANCE_TEST_ROUTE_ANCHOR`, `RULE_TEST_NAV_RE`, `CREATE_ELEMENT_VNODE_RE`) to
+   `SIGNIFICANCE_TEST_ROUTE_RE`, `RULE_TEST_NAV_RE`, `CREATE_ELEMENT_VNODE_RE`) to
    match the new shape, keeping the same "search by stable content, not by name"
    principle.
 4. Re-run `tests/test_patch_dashboard.py` - its `unpatched_static_dir` fixture derives
