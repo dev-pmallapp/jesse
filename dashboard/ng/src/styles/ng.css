@@ -1,0 +1,68 @@
+/* Only `theme` (design tokens) + `utilities` (the `ng:`-prefixed classes) are imported -
+ * deliberately NOT `tailwindcss/preflight` (Tailwind's CSS reset). This stylesheet is
+ * injected into the *same page* as the upstream Nuxt dashboard's own CSS (see
+ * dashboard/ng/README.md "Why no preflight"): a reset that zeroes margins/fonts/list
+ * styles etc. globally would silently restyle every upstream component too, since both
+ * stylesheets share one document with no iframe/shadow-DOM boundary.
+ *
+ * `prefix(ng)` namespaces every generated utility class as `ng:*` (e.g. `ng:flex`,
+ * `ng:bg-elevated`) so nothing here can ever collide with a class name the upstream
+ * bundle's own (unprefixed) Tailwind build already uses - two independent Tailwind
+ * builds writing to the same DOM otherwise only need one class name to collide (e.g. a
+ * generic `.border` with a different color scale) to silently corrupt the other's
+ * styling. */
+/* `prefix(ng)` must be declared on BOTH the theme and utilities imports (not just
+ * utilities) - Tailwind v4 ties prefixed utility class names to a matching prefixed
+ * theme variable namespace, so a mismatch between the two silently drops every
+ * generated utility instead of erroring. */
+@import "tailwindcss/theme" layer(theme) prefix(ng);
+@import "tailwindcss/utilities" layer(utilities) prefix(ng);
+
+/* Tailwind v4's automatic content scanner walks the project directory from wherever the
+ * CSS entry lives; spelled out explicitly here so a future reorganisation of `src/`
+ * can't silently drop a directory from the scan. */
+@source "../pages/**/*.vue";
+@source "../layouts/**/*.vue";
+@source "../components/**/*.vue";
+@source "../entries/**/*.ts";
+@source "../*.ts";
+
+/* Upstream Nuxt UI toggles dark mode via `<html class="dark">` - mirror that exact
+ * selector under our own `ng:` prefix (`ng:dark:*`) so our dark-mode utilities only
+ * ever activate in lockstep with the dashboard's own color mode, never independently. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Map our theme tokens onto Nuxt UI's `--ui-*` design tokens instead of hard-coding
+ * colors. `--ui-*` custom properties are themselves re-pointed for dark mode by the
+ * upstream bundle at the `<html class="dark">` level, and CSS custom-property lookups
+ * are live (resolved at paint time, not at parse time) - so `var(--color-bg)` here
+ * always resolves through to whatever `--ui-bg` currently is, with zero `.dark`
+ * overrides of our own to maintain. See dashboard/ng/README.md for the full token map
+ * and why `@theme` (not `@theme inline`) is enough: nothing here needs the *literal*
+ * value baked into the generated utility CSS, only a live reference to it. */
+@theme {
+  --color-bg: var(--ui-bg);
+  --color-elevated: var(--ui-bg-elevated);
+  --color-accented: var(--ui-bg-accented);
+  --color-border: var(--ui-border);
+  --color-text: var(--ui-text);
+  --color-muted: var(--ui-text-muted);
+  --color-highlighted: var(--ui-text-highlighted);
+  --color-primary: var(--ui-primary);
+  --color-error: var(--ui-error);
+  --color-success: var(--ui-success);
+  --color-warning: var(--ui-warning);
+}
+
+/* Every ng: page is rendered under this single root class (App.vue also puts the
+ * `ng:text-text` utility class on the same element for color, rather than a hand-written
+ * `var(--color-*)` reference here - `prefix(ng)` above renames every theme variable to
+ * `--ng-color-*` at build time, so a plain-CSS rule written against the unprefixed name
+ * would silently reference a custom property that no longer exists). No bare element
+ * selectors below (e.g. a plain `button {}`) - with preflight intentionally not
+ * imported above, anything not scoped under `.ng-root` would leak into the surrounding
+ * upstream page. */
+.ng-root {
+  font-size: 14px;
+  line-height: 1.45;
+}

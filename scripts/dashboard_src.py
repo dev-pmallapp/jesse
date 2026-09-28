@@ -16,8 +16,8 @@ per-command options. Only Python stdlib is used; `extract` shells out to `npx @w
 and `npx prettier` (dev-only tools, not repo dependencies) and to `node --check`.
 
 Which tool owns what (see docs/dashboard-bundle/PATCHING.md and dashboard/README.md for
-the full rationale): `scripts/patch_dashboard.py` owns inserting extra pages (Universe
-Scan, Portfolio, ...) into the entry chunk's route table/nav and owns every generated
+the full rationale): `scripts/patch_dashboard.py` owns inserting the India app's route
++ sidebar nav items into the entry chunk's route table/nav and owns every generated
 `*-page.js` chunk outright. This script's mirror always represents the entry chunk's
 UNPATCHED upstream content - every read/hash/compare of the shipped entry chunk below
 goes through `patch_dashboard.strip_patch()` first (see `_strip_patch_if_entry` and its
@@ -240,16 +240,16 @@ def classify_chunks(static_nuxt: Path = STATIC_NUXT) -> dict:
                          "stores": [...], "paths": [...]}}.
     CSS, fonts, images and the nuxt-monaco-editor/ vendored metadata directory are out of
     scope (not JS chunks) and are not included here. Generated `*-page.js` chunks
-    (`patch_dashboard.PAGES`) are excluded outright, never classified APP or VENDOR:
+    (`patch_dashboard.ROUTES`) are excluded outright, never classified APP or VENDOR:
     they're owned by patch_dashboard.py, not this mirror, regardless of whether their
     current template content happens to trip one of the APP signals below (e.g. quoting
-    a `/universe-scan`-prefixed path - today it doesn't, since the templates use plain
-    string literals rather than the backtick literals API_PATH_RE looks for, but that's
-    an incidental fact about the current templates, not something this classifier
-    should ever depend on).
+    a `/india`-prefixed path - today it doesn't, since the template uses plain string
+    literals rather than the backtick literals API_PATH_RE looks for, but that's an
+    incidental fact about the current template, not something this classifier should
+    ever depend on).
     """
     entry_chunk = find_entry_chunk(static_nuxt)
-    generated_chunk_names = {page.chunk_name for page in patch_dashboard.PAGES}
+    generated_chunk_names = {route.chunk_name for route in patch_dashboard.ROUTES}
     out = {}
     for f in sorted(static_nuxt.glob("*.js")):
         if f.name in generated_chunk_names:

@@ -17,10 +17,10 @@ from it (`extract`'s export-name diff exists specifically to catch a broken case
 
 ## Which tool owns what: this mirror vs. `scripts/patch_dashboard.py`
 
-`scripts/patch_dashboard.py` (see `docs/dashboard-bundle/PATCHING.md`) separately inserts extra
-pages (Universe Scan, Portfolio, ...) into the entry chunk's own route table/sidebar and owns
-every generated `*-page.js` chunk outright. The two tools split the entry chunk's ownership
-cleanly:
+`scripts/patch_dashboard.py` (see `docs/dashboard-bundle/PATCHING.md`) separately inserts the
+India app's single SPA route + its sidebar nav items into the entry chunk's own route
+table/sidebar and owns every generated `*-page.js` chunk outright. The two tools split the entry
+chunk's ownership cleanly:
 
 - **This mirror (`dashboard/src/`) always represents the entry chunk's UNPATCHED upstream
   content.** `status`, `deploy`'s "shipped changed since extract" guard, `extract`'s
@@ -31,12 +31,12 @@ cleanly:
   itself never shows up as a spurious "shipped file changed" or an export-name mismatch.
 - **`deploy` and `revert` of the entry chunk both leave the patch applied afterward.** `deploy`
   copies the (unpatched) readable file over the shipped chunk and then calls
-  `patch_dashboard.patch()` again to reinsert Universe Scan/Portfolio; `revert` restores the
+  `patch_dashboard.patch()` again to reinsert the India route/nav; `revert` restores the
   chunk to master's committed (already patched) content, strip-then-re-patching rather than
   trusting the git blob's own patched bytes verbatim, so it stays correct even if something else
   under `jesse/static/` moved independently. After either, `python scripts/patch_dashboard.py
   --check` must pass.
-- **Generated `*-page.js` chunks (`patch_dashboard.PAGES`) are excluded from this mirror
+- **Generated `*-page.js` chunks (`patch_dashboard.ROUTES`) are excluded from this mirror
   entirely** - never classified APP or VENDOR, never hashed into `manifest.json`. They're
   hand-written templates under `jesse/dashboard_patches/`, not compiled Vite output, so they
   have no place in a mirror of the *compiled* bundle.

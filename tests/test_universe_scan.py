@@ -386,19 +386,21 @@ def test_universe_scan_post_routes_require_auth(tmp_path, monkeypatch):
     assert response.status_code == 401
 
 
-def test_get_universe_scan_page_serves_dashboard_spa_shell_without_auth():
-    """`GET /universe-scan` is registered directly on the shared `fastapi_app` (not
-    the auth-gated router) - see `jesse/__init__.py` - and, now that Universe Scan is a
-    page inside the dashboard SPA rather than a standalone page (see
-    `jesse/dashboard_patches/`), serves the exact same `static/index.html` shell as
-    `GET /`. This only covers the server-side fallback for a hard refresh/deep link;
-    the client-side route the patched bundle then boots into isn't exercised by a
-    plain `TestClient` request (no JS execution) - see
-    `tests/test_patch_dashboard.py` for the bundle-patch coverage."""
+@pytest.mark.parametrize('path', ['/india', '/india/scan', '/india/stock/NSE:RELIANCE'])
+def test_get_india_page_serves_dashboard_spa_shell_without_auth(path):
+    """`GET /india` and `GET /india/{rest:path}` are registered directly on the shared
+    `fastapi_app` (not the auth-gated router) - see `jesse/__init__.py` - and, since the
+    whole India app (Stocks/Baskets/Scan/Portfolio, dev-pmallapp/jesse#80/#90/#92/#105)
+    is a single page inside the dashboard SPA (see `jesse/dashboard_patches/` and
+    `dashboard/ng/`), serve the exact same `static/index.html` shell as `GET /`
+    regardless of which India sub-path was requested. This only covers the server-side
+    fallback for a hard refresh/deep link; the client-side route dashboard/ng's own
+    router then resolves isn't exercised by a plain `TestClient` request (no JS
+    execution) - see `tests/test_patch_dashboard.py` for the bundle-patch coverage."""
     from jesse.services.web import fastapi_app
 
     client = TestClient(fastapi_app)
-    response = client.get('/universe-scan')
+    response = client.get(path)
     assert response.status_code == 200
     assert 'text/html' in response.headers['content-type']
     # Same bytes as `GET /` - proves this isn't serving a leftover standalone page.
@@ -406,18 +408,14 @@ def test_get_universe_scan_page_serves_dashboard_spa_shell_without_auth():
     assert b'__NUXT__' in response.content
 
 
-def test_get_portfolio_page_serves_dashboard_spa_shell_without_auth():
-    """Mirrors `test_get_universe_scan_page_serves_dashboard_spa_shell_without_auth`
-    above for the second dashboard-only page (dev-pmallapp/jesse#92): `GET /portfolio`
-    is registered on the same shared, un-auth-gated handler (see `jesse/__init__.py`)
-    and must serve the identical `static/index.html` shell, not a 404 from the
-    StaticFiles mount."""
+@pytest.mark.parametrize('old_path,new_path', [('/universe-scan', '/india/scan'), ('/portfolio', '/india/portfolio')])
+def test_old_dashboard_paths_redirect_to_india(old_path, new_path):
+    """Pre-#105 bookmarks/links to the old standalone Universe Scan/Portfolio paths
+    must redirect (not 404) to their new home under `/india/*` - see
+    `jesse/__init__.py`."""
     from jesse.services.web import fastapi_app
 
     client = TestClient(fastapi_app)
-    response = client.get('/portfolio')
-    assert response.status_code == 200
-    assert 'text/html' in response.headers['content-type']
-    # Same bytes as `GET /` - proves this is the SPA shell, not a 404/placeholder.
-    assert response.content == client.get('/').content
-    assert b'__NUXT__' in response.content
+    response = client.get(old_path, follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers['location'] == new_path

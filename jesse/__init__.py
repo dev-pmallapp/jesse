@@ -1,7 +1,7 @@
 import os
 import warnings
 from contextlib import asynccontextmanager
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from jesse.services.web import fastapi_app
 import jesse.helpers as jh
@@ -43,22 +43,37 @@ async def index():
     return FileResponse(f"{JESSE_DIR}/static/index.html")
 
 
-# Universe Scan (dev-pmallapp/jesse#80/#90) and Portfolio (dev-pmallapp/jesse#92) are
-# pages *inside* the dashboard SPA (see jesse/dashboard_patches/ and
-# scripts/patch_dashboard.py), reached client-side via the router-links the patcher
-# adds to the sidebar - but a hard refresh or a direct deep link to either path still
-# hits the server first, before any SPA JS has run. There's no html=True/404-fallback
-# on the StaticFiles mount below, so without these routes such a request would 404
-# instead of booting the SPA (same reasoning as the "/" route above; every other
-# dashboard mode's deep routes have this same gap - not specific to these pages).
-# Registered here, before the StaticFiles mount, with no auth dependency: the SPA
-# itself (not the server) decides whether to show the page or its own login gate,
-# based on the auth token it finds in localStorage. Add a new `@fastapi_app.get(...)`
-# line here whenever a new page is added to `scripts/patch_dashboard.py`'s `PAGES`.
-@fastapi_app.get("/universe-scan")
-@fastapi_app.get("/portfolio")
-async def dashboard_spa_page():
+# The India app (Stocks/Baskets/Scan/Portfolio - dev-pmallapp/jesse#80/#90/#92/#105) is
+# a single page *inside* the dashboard SPA (see jesse/dashboard_patches/india_page.
+# template.js, dashboard/ng/ and scripts/patch_dashboard.py), reached client-side via
+# the sidebar nav items the patcher adds - but a hard refresh or a direct deep link to
+# any /india/* path still hits the server first, before any SPA JS has run. There's no
+# html=True/404-fallback on the StaticFiles mount below, so without this route such a
+# request would 404 instead of booting the SPA (same reasoning as the "/" route above;
+# every other dashboard mode's deep routes have this same gap - not specific to this
+# page). `{rest:path}` accepts any sub-path (`:path` converters, unlike the default
+# string converter, also match `/`) so every dashboard/ng sub-route (`/india/stocks`,
+# `/india/stock/NSE:RELIANCE`, ...) resolves to the same SPA shell; dashboard/ng's own
+# internal router (see dashboard/ng/src/router.ts) - not the server - decides which
+# page that renders. Registered here, before the StaticFiles mount, with no auth
+# dependency: the SPA itself decides whether to show the page or its own login gate,
+# based on the auth token it finds in localStorage.
+@fastapi_app.get("/india")
+@fastapi_app.get("/india/{rest:path}")
+async def india_spa_page(rest: str = ""):
     return FileResponse(f"{JESSE_DIR}/static/index.html")
+
+
+# Pre-#105 bookmarks/links to the old standalone Universe Scan/Portfolio paths -
+# redirect (307, preserving method) to their new home under /india/* rather than 404.
+@fastapi_app.get("/universe-scan")
+async def universe_scan_redirect():
+    return RedirectResponse(url="/india/scan", status_code=307)
+
+
+@fastapi_app.get("/portfolio")
+async def portfolio_redirect():
+    return RedirectResponse(url="/india/portfolio", status_code=307)
 
 
 
@@ -90,6 +105,8 @@ from jesse.controllers.route_templates_controller import router as route_templat
 from jesse.controllers.ai_model_controller import router as ai_model_router
 from jesse.controllers.universe_scan_controller import router as universe_scan_router
 from jesse.controllers.portfolio_controller import router as portfolio_router
+from jesse.controllers.equities_controller import router as equities_router
+from jesse.controllers.baskets_controller import router as baskets_router
 from jesse.services.env import is_test_env
 
 # register routers
@@ -116,6 +133,8 @@ fastapi_app.include_router(route_templates_router)
 fastapi_app.include_router(ai_model_router)
 fastapi_app.include_router(universe_scan_router)
 fastapi_app.include_router(portfolio_router)
+fastapi_app.include_router(equities_router)
+fastapi_app.include_router(baskets_router)
 
 if is_test_env():
     from jesse.controllers.e2e_controller import router as e2e_router
