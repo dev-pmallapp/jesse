@@ -7,7 +7,7 @@
   mechanism exists - this component has no such dependency).
 -->
 <template>
-  <div class="ng:relative ng:mb-1.5">
+  <div ref="wrapperRef" class="ng:relative ng:mb-1.5">
     <div class="ng:flex ng:gap-4 ng:flex-wrap ng:mb-1.5 ng:text-xs ng:text-muted">
       <span v-for="(s, i) in series" :key="s.label" class="ng:inline-flex ng:items-center ng:gap-1">
         <span class="ng:w-2.5 ng:h-2.5 ng:rounded-full ng:inline-block" :style="{ background: colorFor(i) }" />
@@ -16,7 +16,7 @@
     </div>
     <svg
       ref="svgRef"
-      :viewBox="`0 0 ${width} ${height}`"
+      :viewBox="`0 0 ${containerWidth} ${height}`"
       width="100%"
       :height="height"
       preserveAspectRatio="xMidYMid meet"
@@ -71,7 +71,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { fmtINR } from '../utils/format';
 
 export interface EquityPoint {
@@ -97,11 +97,38 @@ const props = withDefaults(
 
 const formatValue = computed(() => props.valueFormatter ?? fmtINR);
 
-const padL = 60;
+// The chart used to render at a fixed `props.width` (default 760) regardless of its
+// card's actual width, leaving a large empty gutter (or, on a narrower card, clipping)
+// whenever the container wasn't exactly that wide - a ResizeObserver on the wrapper
+// keeps the SVG's own coordinate space (viewBox) matched to the real rendered pixel
+// width instead. `containerWidth` starts at `props.width` as a same-frame fallback
+// until the observer's first callback fires.
+const wrapperRef = ref<HTMLDivElement | null>(null);
+const containerWidth = ref(props.width);
+let resizeObserver: ResizeObserver | null = null;
+
+onMounted(() => {
+  if (!wrapperRef.value) return;
+  resizeObserver = new ResizeObserver((entries) => {
+    const w = Math.round(entries[0]?.contentRect.width ?? 0);
+    if (w > 0) containerWidth.value = w;
+  });
+  resizeObserver.observe(wrapperRef.value);
+});
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+});
+
+// Compact, fixed-width left gutter for the y-axis labels (`fmtINR`-formatted values
+// rarely exceed a few characters) - keeps most of the responsive width for the plot
+// itself rather than scaling the gutter with the container.
+const padL = 48;
 const padR = 16;
 const padT = 16;
 const padB = 28;
-const plotW = computed(() => Math.max(props.width - padL - padR, 1));
+const plotW = computed(() => Math.max(containerWidth.value - padL - padR, 1));
 const plotH = computed(() => Math.max(props.height - padT - padB, 1));
 
 const allPoints = computed(() => props.series.flatMap((s) => s.points));
@@ -163,10 +190,11 @@ function onMouseMove(evt: MouseEvent): void {
   if (!svg) return;
   const rect = svg.getBoundingClientRect();
   if (!rect.width) return;
-  // The svg scales responsively (width:100%) while its internal coordinate system
-  // stays fixed at `props.width` (the viewBox) - convert the mouse's on-screen pixel
-  // back into that fixed coordinate space before comparing it against xPix(...).
-  const scaleX = props.width / rect.width;
+  // The svg's rendered box (width:100%) and its viewBox now track the same measured
+  // `containerWidth`, so this ratio is normally ~1 - kept anyway (rather than using
+  // `evt.clientX - rect.left` directly) so a stale rect between a resize and the next
+  // ResizeObserver callback can't misplace the crosshair.
+  const scaleX = containerWidth.value / rect.width;
   const mouseX = (evt.clientX - rect.left) * scaleX;
   const primaryPoints = props.series[0]?.points ?? [];
   if (!primaryPoints.length) return;

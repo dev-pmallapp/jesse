@@ -6,7 +6,7 @@
 // where it still applies.
 import { api, type ApiResult } from './client';
 import { csvEscape, downloadTextFile } from '../utils/csv';
-import { round2 } from '../utils/format';
+import { displayTicker, round2 } from '../utils/format';
 
 // ---------------------------------------------------------------------------------
 // Result shape (jesse/research/portfolio_rebalance.py)
@@ -306,18 +306,14 @@ export function fetchBasketsList(): Promise<ApiResult<{ baskets: BasketSummary[]
 }
 
 // ---------------------------------------------------------------------------------
-// Symbol display - mirrors `jesse.services.historical_data.india.symbols.to_exchange_ticker`
-// (`BASE-INR` -> `BASE`, `_` -> `-`) so a trade/holding row can link to
-// `/india/stock/<exchange>:<ticker>` without a round trip to the server just to
+// Symbol display - `displayTicker` (utils/format.ts) is the one shared ticker
+// formatter across the whole app; this just builds the `/india/stock/...` path a
+// trade/holding row links to from it, without a round trip to the server just to
 // reformat a symbol we already have.
 // ---------------------------------------------------------------------------------
 
-export function symbolToTicker(symbol: string): string {
-  return symbol.replace(/-INR$/i, '').replace(/_/g, '-');
-}
-
 export function stockPath(exchange: string, symbol: string): string {
-  return `/india/stock/${exchange}:${symbolToTicker(symbol)}`;
+  return `/india/stock/${displayTicker(symbol, exchange)}`;
 }
 
 // ---------------------------------------------------------------------------------

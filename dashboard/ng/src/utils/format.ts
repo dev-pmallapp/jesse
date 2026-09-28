@@ -43,3 +43,20 @@ export function parseDateMs(dateStr: string): number {
 export function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
+
+/** Formats a ticker for display as `EXCHANGE:TICKER` (e.g. `NSE:RELIANCE`), mirroring
+ * `jesse/services/historical_data/india/symbols.py`'s `to_exchange_ticker` (`_` decodes
+ * back to `-`, e.g. `BAJAJ_AUTO-INR` -> `NSE:BAJAJ-AUTO`) client-side rather than with a
+ * server round trip just to reformat a symbol already in hand. Handles three input
+ * shapes so every call site can pass whatever it already has:
+ *  - a Jesse internal symbol (`RELIANCE-INR`, `BAJAJ_AUTO-INR`) - the common case
+ *  - an already `EXCHANGE:TICKER` symbol - passed through unchanged (never double-prefixed)
+ *  - a bare exchange ticker (`RELIANCE`, no `-INR` suffix) - just prefixed with `exchange` */
+export function displayTicker(symbol: string, exchange = 'NSE'): string {
+  if (!symbol) return symbol;
+  const trimmed = symbol.trim();
+  if (trimmed.includes(':')) return trimmed;
+  if (!/-INR$/i.test(trimmed)) return `${exchange}:${trimmed}`;
+  const ticker = trimmed.replace(/-INR$/i, '').replace(/_/g, '-');
+  return `${exchange}:${ticker}`;
+}

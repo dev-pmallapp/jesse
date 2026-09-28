@@ -1,6 +1,8 @@
 import os
 import warnings
 from contextlib import asynccontextmanager
+from urllib.parse import quote
+from fastapi import Request
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from jesse.services.web import fastapi_app
@@ -46,34 +48,46 @@ async def index():
 # The India app (Stocks/Baskets/Scan/Portfolio - dev-pmallapp/jesse#80/#90/#92/#105) is
 # a single page *inside* the dashboard SPA (see jesse/dashboard_patches/india_page.
 # template.js, dashboard/ng/ and scripts/patch_dashboard.py), reached client-side via
-# the sidebar nav items the patcher adds - but a hard refresh or a direct deep link to
-# any /india/* path still hits the server first, before any SPA JS has run. There's no
-# html=True/404-fallback on the StaticFiles mount below, so without this route such a
-# request would 404 instead of booting the SPA (same reasoning as the "/" route above;
-# every other dashboard mode's deep routes have this same gap - not specific to this
-# page). `{rest:path}` accepts any sub-path (`:path` converters, unlike the default
-# string converter, also match `/`) so every dashboard/ng sub-route (`/india/stocks`,
-# `/india/stock/NSE:RELIANCE`, ...) resolves to the same SPA shell; dashboard/ng's own
-# internal router (see dashboard/ng/src/router.ts) - not the server - decides which
-# page that renders. Registered here, before the StaticFiles mount, with no auth
-# dependency: the SPA itself decides whether to show the page or its own login gate,
-# based on the auth token it finds in localStorage.
+# the sidebar nav items the patcher adds. Upstream's own vue-router runs in HASH mode
+# (browser URLs look like `/#/india/stocks`, not `/india/stocks`) - confirmed in a real
+# browser, not just from reading the bundle - so a plain path URL never reaches the
+# SPA's router at all: it 200s (serving index.html, same shell as "/") with an empty
+# hash, which the SPA reads as its default Home route, not India. A hard refresh or a
+# direct deep link/bookmark to any /india/* path therefore needs a *redirect* into the
+# hash fragment, not just a served shell - `{rest:path}` accepts any sub-path (`:path`
+# converters, unlike the default string converter, also match `/`) so every
+# dashboard/ng sub-route (`/india/stocks`, `/india/stock/NSE:RELIANCE`, ...) redirects
+# to its `/#/india/...` twin; dashboard/ng's own internal router (see dashboard/ng/src/
+# router.ts) then resolves which page that hash renders once the SPA has booted. The
+# query string (e.g. `?q=x`) is carried over unchanged since it's already
+# request-encoded; `rest` itself is re-quoted (keeping `/` and `:` literal - ticker
+# paths like `stock/NSE:RELIANCE` need both) rather than trusted as-is, and the
+# redirect target is always built as a literal `/#/india...` string (never an
+# attacker-controlled scheme/host), so this can never become an open redirect.
+# Registered here, before the StaticFiles mount, with no auth dependency: the SPA
+# itself decides whether to show the page or its own login gate, based on the auth
+# token it finds in localStorage.
 @fastapi_app.get("/india")
 @fastapi_app.get("/india/{rest:path}")
-async def india_spa_page(rest: str = ""):
-    return FileResponse(f"{JESSE_DIR}/static/index.html")
+async def india_spa_page(request: Request, rest: str = ""):
+    target = f"/#/india/{quote(rest, safe='/:')}" if rest else "/#/india"
+    if request.url.query:
+        target = f"{target}?{request.url.query}"
+    return RedirectResponse(url=target, status_code=307)
 
 
 # Pre-#105 bookmarks/links to the old standalone Universe Scan/Portfolio paths -
-# redirect (307, preserving method) to their new home under /india/* rather than 404.
+# redirect (307, preserving method) straight to their new India sub-page's hash route
+# (not to plain `/india/...`, which would itself just redirect again via the handler
+# above - see its comment on why a path URL can't reach the SPA directly).
 @fastapi_app.get("/universe-scan")
 async def universe_scan_redirect():
-    return RedirectResponse(url="/india/scan", status_code=307)
+    return RedirectResponse(url="/#/india/scan", status_code=307)
 
 
 @fastapi_app.get("/portfolio")
 async def portfolio_redirect():
-    return RedirectResponse(url="/india/portfolio", status_code=307)
+    return RedirectResponse(url="/#/india/portfolio", status_code=307)
 
 
 

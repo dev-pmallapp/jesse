@@ -30,7 +30,7 @@
         <DataTable :columns="tradeColumns" :rows="reb.trades" :row-key="tradeKey" empty-text="No trades.">
           <template #cell-symbol="{ row }">
             <button type="button" class="ng:bg-transparent ng:border-0 ng:p-0 ng:text-primary ng:underline ng:cursor-pointer" @click="navigate(stockPath(exchange, String(row.symbol)))">
-              {{ symbolToTicker(String(row.symbol)) }}
+              {{ displayTicker(String(row.symbol), exchange) }}
             </button>
           </template>
           <template #cell-price="{ value }">{{ fmtINR(value as number) }}</template>
@@ -42,7 +42,7 @@
           <DataTable :columns="holdingColumns" :rows="holdingRows" :row-key="(r) => String(r.symbol)" empty-text="No holdings.">
             <template #cell-symbol="{ row }">
               <button type="button" class="ng:bg-transparent ng:border-0 ng:p-0 ng:text-primary ng:underline ng:cursor-pointer" @click="navigate(stockPath(exchange, String(row.symbol)))">
-                {{ symbolToTicker(String(row.symbol)) }}
+                {{ displayTicker(String(row.symbol), exchange) }}
               </button>
             </template>
           </DataTable>
@@ -55,8 +55,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import DataTable, { type DataTableColumn } from '../DataTable.vue';
-import { fmtINR } from '../../utils/format';
-import { holdingRows as buildHoldingRows, stockPath, symbolToTicker, type Rebalance, type Trade } from '../../api/portfolio';
+import { displayTicker, fmtINR } from '../../utils/format';
+import { holdingRows as buildHoldingRows, stockPath, type Rebalance, type Trade } from '../../api/portfolio';
 import { useNgNavigate } from '../../router';
 
 const props = defineProps<{

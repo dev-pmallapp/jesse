@@ -18,7 +18,10 @@
           <td class="ng:px-2.5 ng:py-1.5 ng:border-b ng:border-border ng:whitespace-nowrap ng:text-[12.5px] ng:font-medium ng:text-highlighted">
             {{ row.ticker }}
           </td>
-          <td class="ng:px-2.5 ng:py-1.5 ng:border-b ng:border-border ng:whitespace-nowrap ng:text-[12.5px] ng:max-w-[220px] ng:overflow-hidden ng:text-ellipsis">
+          <td
+            class="ng:px-2.5 ng:py-1.5 ng:border-b ng:border-border ng:whitespace-nowrap ng:text-[12.5px] ng:max-w-[220px] ng:overflow-hidden ng:text-ellipsis"
+            :title="row.company"
+          >
             {{ row.company }}
           </td>
           <td class="ng:px-2.5 ng:py-1.5 ng:border-b ng:border-border ng:whitespace-nowrap ng:text-[12.5px] ng:text-muted">

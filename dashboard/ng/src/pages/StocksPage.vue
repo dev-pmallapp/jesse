@@ -90,7 +90,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue';
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AppCard from '../components/AppCard.vue';
 import Banner from '../components/Banner.vue';
 import DataTable, { type DataTableColumn } from '../components/DataTable.vue';
@@ -98,9 +98,10 @@ import FormField from '../components/FormField.vue';
 import StatusPill from '../components/StatusPill.vue';
 import { loadRecentStocks, type RecentStock } from '../components/stocks/recentStocks';
 import { searchEquities, type EquitySearchResult, type Exchange } from '../api/equities';
-import { useNgNavigate, useNgRoute } from '../router';
+import { useNgNavigate, useNgNavigateReplace, useNgRoute } from '../router';
 
 const navigate = useNgNavigate();
+const navigateReplace = useNgNavigateReplace();
 const route = useNgRoute();
 
 const EXCHANGE_OPTIONS: { label: string; value: Exchange | null }[] = [
@@ -161,13 +162,13 @@ async function runSearch(): Promise<void> {
 
 // 250ms debounce on both the query text and the exchange toggle - also mirrors the
 // settled query into the URL (?q=) so back navigation restores the last search instead
-// of landing on the empty intro state. A plain push (not a true history replace) is
-// acceptable here per spec - the app has no replace() primitive (see router.ts).
+// of landing on the empty intro state. Uses replace (not push) so every keystroke's
+// settled query doesn't each add its own back-button stop.
 watch([query, exchange], () => {
   if (debounceHandle) clearTimeout(debounceHandle);
   debounceHandle = setTimeout(() => {
     const q = query.value.trim();
-    navigate(q ? `/india/stocks?q=${encodeURIComponent(q)}` : '/india/stocks');
+    navigateReplace(q ? `/india/stocks?q=${encodeURIComponent(q)}` : '/india/stocks');
     runSearch();
   }, 250);
 });
@@ -179,5 +180,12 @@ onMounted(() => {
     recents.value = [];
   }
   if (query.value.trim()) runSearch();
+});
+
+// Without this, a debounce timer scheduled just before the user clicks a result (or
+// otherwise navigates away) would still fire after this component is torn down - its
+// `navigateReplace`/`runSearch` calls would race the new page's own navigation/state.
+onBeforeUnmount(() => {
+  if (debounceHandle) clearTimeout(debounceHandle);
 });
 </script>

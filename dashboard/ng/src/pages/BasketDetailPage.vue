@@ -71,7 +71,11 @@
         />
       </div>
 
-      <AppCard title="Members">
+      <!-- min-w-0: grid items default to min-width:auto, which lets this card's own
+           content (the members table) force the grid track - and the whole page -
+           wider than the viewport instead of the table's own ng:overflow-x-auto
+           wrapper scrolling internally. -->
+      <AppCard title="Members" class="ng:min-w-0">
         <MembersTable :members="filteredMembers" :total-count="detail.members.length" @select="onSelectMember" />
       </AppCard>
     </div>

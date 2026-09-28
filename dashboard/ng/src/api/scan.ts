@@ -5,6 +5,7 @@
 // payload built here needs no renaming before it hits the wire; UI-facing shapes
 // (`ScanFormState`, `ScanRankedRow`) are camelCase and kept separate.
 import { api, type ApiResult } from './client';
+import { displayTicker } from '../utils/format';
 
 // ---------------------------------------------------------------------------------
 // Server contract types (see universe_scan_controller.py / services/web.py's
@@ -365,15 +366,6 @@ export interface ScanRankedRow {
   error: string | null;
 }
 
-/** Best-effort mirror of `jesse.services.symbol_input.display_ticker`'s NSE/BSE case
- * (`RELIANCE-INR` -> `RELIANCE`, `BAJAJ_AUTO-INR` -> `BAJAJ-AUTO`) done client-side
- * rather than with a server round trip per row - good enough for display; the backend
- * (`normalize_symbol`/`display_ticker`) remains the source of truth for the real mapping. */
-export function tickerFor(exchange: string, internalSymbol: string): string {
-  const base = internalSymbol.replace(/-INR$/i, '').replace(/_/g, '-');
-  return `${exchange}:${base}`;
-}
-
 /** Ranks by TEST return (`pnlPct`) descending by default - "run a strategy on every
  * stock and rank the results" - while DataTable's own column-click sort still lets a
  * user re-rank by sharpe/drawdown/trades/win rate. An error row (no metrics) always
@@ -381,7 +373,7 @@ export function tickerFor(exchange: string, internalSymbol: string): string {
 export function toRankedRows(session: ScanSession): ScanRankedRow[] {
   const exchange = session.config?.exchange ?? 'NSE';
   const rows = session.rows.map((r): ScanRankedRow => {
-    const ticker = tickerFor(exchange, r.symbol);
+    const ticker = displayTicker(r.symbol, exchange);
     if (r.error) {
       return {
         phase: r.phase, strategy: r.strategy, symbol: r.symbol, ticker,

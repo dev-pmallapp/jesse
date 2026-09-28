@@ -5,7 +5,7 @@
 // wrapper file - keep both in sync if either changes.
 import { createApp, ref, type App as VueApp, type Ref } from 'vue';
 import AppRoot from '../App.vue';
-import { matchPath, NG_NAVIGATE_KEY, NG_ROUTE_KEY, type NgRoute } from '../router';
+import { matchPath, NG_NAVIGATE_KEY, NG_NAVIGATE_REPLACE_KEY, NG_ROUTE_KEY, type NgRoute } from '../router';
 import '../styles/ng.css';
 
 const NG_CSS_LINK_ID = 'jesse-ng-css';
@@ -70,11 +70,16 @@ export function mount(el: HTMLElement, ctx: NgMountContext): NgMountHandle {
     ctx.router.push(path);
   }
 
+  function navigateReplace(path: string): void {
+    ctx.router.replace(path);
+  }
+
   applyPath(ctx.router.currentRoute.value.fullPath);
 
   const app: VueApp = createApp(AppRoot);
   app.provide(NG_ROUTE_KEY, routeRef);
   app.provide(NG_NAVIGATE_KEY, navigate);
+  app.provide(NG_NAVIGATE_REPLACE_KEY, navigateReplace);
   app.mount(child);
 
   const unsubscribe = ctx.router.afterEach((to) => applyPath(to.fullPath));

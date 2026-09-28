@@ -37,10 +37,10 @@
 
     <p v-if="loading" class="ng:text-muted ng:text-sm ng:m-0">Loading candles...</p>
     <p v-else-if="!filteredCandles.length" class="ng:text-muted ng:text-sm ng:m-0">No candle data for this range.</p>
-    <div v-else class="ng:relative">
+    <div v-else ref="wrapperRef" class="ng:relative">
       <svg
         ref="svgRef"
-        :viewBox="`0 0 ${width} ${height}`"
+        :viewBox="`0 0 ${containerWidth} ${height}`"
         width="100%"
         :height="height"
         preserveAspectRatio="xMidYMid meet"
@@ -96,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import type { CandleTimeframe, EquityCandleRow } from '../../api/equities';
 import { fmtINR } from '../../utils/format';
 
@@ -139,7 +139,9 @@ const filteredCandles = computed(() => {
 });
 
 // --- layout: a price panel stacked above a volume panel, sharing one x scale ---
-const padL = 56;
+// Compact, fixed-width left gutter for the y-axis labels (fmtINR-formatted prices are
+// rarely more than a few characters) - most of the responsive width goes to the plot.
+const padL = 48;
 const padR = 12;
 const padT = 8;
 const priceH = 180;
@@ -151,7 +153,37 @@ const priceBaselineY = padT + priceH;
 const volTopY = priceBaselineY + gapH;
 const volBaselineY = volTopY + volH;
 
-const plotW = computed(() => Math.max(props.width - padL - padR, 1));
+// The chart used to render at a fixed `props.width` (default 760) regardless of its
+// card's actual width, leaving a large empty gutter (or clipping on a narrower card) -
+// a ResizeObserver on the wrapper (only mounted once candles are loaded, hence the
+// `watch` below rather than a plain `onMounted`) keeps the SVG's own coordinate space
+// (viewBox) matched to the real rendered pixel width instead. `containerWidth` starts
+// at `props.width` as a same-frame fallback until the observer's first callback fires.
+const wrapperRef = ref<HTMLDivElement | null>(null);
+const containerWidth = ref(props.width);
+let resizeObserver: ResizeObserver | null = null;
+
+watch(
+  wrapperRef,
+  (el) => {
+    resizeObserver?.disconnect();
+    resizeObserver = null;
+    if (!el) return;
+    resizeObserver = new ResizeObserver((entries) => {
+      const w = Math.round(entries[0]?.contentRect.width ?? 0);
+      if (w > 0) containerWidth.value = w;
+    });
+    resizeObserver.observe(el);
+  },
+  { immediate: true },
+);
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+});
+
+const plotW = computed(() => Math.max(containerWidth.value - padL - padR, 1));
 const barWidth = computed(() => Math.max((plotW.value / Math.max(filteredCandles.value.length, 1)) * 0.7, 1));
 
 const closes = computed(() => filteredCandles.value.map((c) => c[4]));
@@ -215,7 +247,10 @@ function onMouseMove(evt: MouseEvent): void {
   if (!svg || !pts.length) return;
   const rect = svg.getBoundingClientRect();
   if (!rect.width) return;
-  const scaleX = props.width / rect.width;
+  // The svg's rendered box and its viewBox now track the same measured
+  // `containerWidth`, so this ratio is normally ~1 - kept anyway so a stale rect
+  // between a resize and the next ResizeObserver callback can't misplace the crosshair.
+  const scaleX = containerWidth.value / rect.width;
   const mouseX = (evt.clientX - rect.left) * scaleX;
 
   let nearestI = 0;

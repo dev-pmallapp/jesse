@@ -386,36 +386,52 @@ def test_universe_scan_post_routes_require_auth(tmp_path, monkeypatch):
     assert response.status_code == 401
 
 
-@pytest.mark.parametrize('path', ['/india', '/india/scan', '/india/stock/NSE:RELIANCE'])
-def test_get_india_page_serves_dashboard_spa_shell_without_auth(path):
+@pytest.mark.parametrize(
+    'path,expected_location',
+    [
+        ('/india', '/#/india'),
+        ('/india/scan', '/#/india/scan'),
+        ('/india/stock/NSE:RELIANCE', '/#/india/stock/NSE:RELIANCE'),
+    ],
+)
+def test_get_india_page_redirects_into_the_spas_hash_route_without_auth(path, expected_location):
     """`GET /india` and `GET /india/{rest:path}` are registered directly on the shared
-    `fastapi_app` (not the auth-gated router) - see `jesse/__init__.py` - and, since the
-    whole India app (Stocks/Baskets/Scan/Portfolio, dev-pmallapp/jesse#80/#90/#92/#105)
-    is a single page inside the dashboard SPA (see `jesse/dashboard_patches/` and
-    `dashboard/ng/`), serve the exact same `static/index.html` shell as `GET /`
-    regardless of which India sub-path was requested. This only covers the server-side
-    fallback for a hard refresh/deep link; the client-side route dashboard/ng's own
-    router then resolves isn't exercised by a plain `TestClient` request (no JS
-    execution) - see `tests/test_patch_dashboard.py` for the bundle-patch coverage."""
+    `fastapi_app` (not the auth-gated router) - see `jesse/__init__.py`. Upstream's
+    vue-router runs in HASH mode (real browser URLs are `/#/india/...`, not
+    `/india/...`), so a plain path request - a hard refresh or a direct deep link/
+    bookmark, before any SPA JS has run - can't be served the SPA shell directly (it
+    would boot with an empty hash and land on Home); it must 307-redirect into the
+    equivalent `/#/india/...` URL instead. This only covers that server-side redirect;
+    the client-side route dashboard/ng's own router then resolves isn't exercised by a
+    plain `TestClient` request (no JS execution) - see `tests/test_patch_dashboard.py`
+    for the bundle-patch coverage."""
     from jesse.services.web import fastapi_app
 
     client = TestClient(fastapi_app)
-    response = client.get(path)
-    assert response.status_code == 200
-    assert 'text/html' in response.headers['content-type']
-    # Same bytes as `GET /` - proves this isn't serving a leftover standalone page.
-    assert response.content == client.get('/').content
-    assert b'__NUXT__' in response.content
+    response = client.get(path, follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers['location'] == expected_location
 
 
-@pytest.mark.parametrize('old_path,new_path', [('/universe-scan', '/india/scan'), ('/portfolio', '/india/portfolio')])
-def test_old_dashboard_paths_redirect_to_india(old_path, new_path):
+def test_get_india_page_redirect_preserves_query_string():
+    """A deep link like `/india/stocks?q=reliance` must carry its query string over to
+    the hash route (`/#/india/stocks?q=reliance`), not drop it - see `jesse/__init__.py`."""
+    from jesse.services.web import fastapi_app
+
+    client = TestClient(fastapi_app)
+    response = client.get('/india/stocks?q=reliance', follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers['location'] == '/#/india/stocks?q=reliance'
+
+
+@pytest.mark.parametrize('old_path,new_hash_path', [('/universe-scan', '/#/india/scan'), ('/portfolio', '/#/india/portfolio')])
+def test_old_dashboard_paths_redirect_to_india(old_path, new_hash_path):
     """Pre-#105 bookmarks/links to the old standalone Universe Scan/Portfolio paths
-    must redirect (not 404) to their new home under `/india/*` - see
-    `jesse/__init__.py`."""
+    must redirect (not 404) straight to their new home's hash route under `/#/india/*`
+    - see `jesse/__init__.py`."""
     from jesse.services.web import fastapi_app
 
     client = TestClient(fastapi_app)
     response = client.get(old_path, follow_redirects=False)
     assert response.status_code == 307
-    assert response.headers['location'] == new_path
+    assert response.headers['location'] == new_hash_path

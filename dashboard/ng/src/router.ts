@@ -98,6 +98,10 @@ export function pageComponentFor(name: string): Component | null {
 
 export const NG_ROUTE_KEY: InjectionKey<Ref<NgRoute>> = Symbol('ng-route');
 export const NG_NAVIGATE_KEY: InjectionKey<(path: string) => void> = Symbol('ng-navigate');
+// A separate key (rather than an options arg on NG_NAVIGATE_KEY) mirrors upstream's own
+// router surface, which exposes `push`/`replace` as two distinct methods - entries/
+// india.ts provides this straight from `ctx.router.replace`, no extra wiring needed.
+export const NG_NAVIGATE_REPLACE_KEY: InjectionKey<(path: string) => void> = Symbol('ng-navigate-replace');
 
 export function useNgRoute(): Ref<NgRoute> {
   const route = inject(NG_ROUTE_KEY);
@@ -108,5 +112,14 @@ export function useNgRoute(): Ref<NgRoute> {
 export function useNgNavigate(): (path: string) => void {
   const navigate = inject(NG_NAVIGATE_KEY);
   if (!navigate) throw new Error('useNgNavigate() called outside the India app');
+  return navigate;
+}
+
+/** Like `useNgNavigate()` but replaces the current history entry instead of pushing a
+ * new one - for URL syncing that shouldn't itself become a back-button stop (e.g.
+ * mirroring a search box's settled value into `?q=`, see StocksPage.vue). */
+export function useNgNavigateReplace(): (path: string) => void {
+  const navigate = inject(NG_NAVIGATE_REPLACE_KEY);
+  if (!navigate) throw new Error('useNgNavigateReplace() called outside the India app');
   return navigate;
 }

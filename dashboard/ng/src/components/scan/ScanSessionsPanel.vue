@@ -21,7 +21,7 @@ import { computed } from 'vue';
 import AppButton from '../AppButton.vue';
 import DataTable, { type DataTableColumn } from '../DataTable.vue';
 import StatusPill from '../StatusPill.vue';
-import { fmtDate } from '../../utils/format';
+import { displayTicker, fmtDate } from '../../utils/format';
 import type { ScanSessionSummary } from '../../api/scan';
 
 const props = defineProps<{ sessions: ScanSessionSummary[] }>();
@@ -54,7 +54,14 @@ const rows = computed<SessionRow[]>(() =>
   props.sessions.map((s) => {
     const p = s.progress;
     const cfg = s.config_summary;
-    const target = (cfg.universes && cfg.universes.length ? cfg.universes : cfg.symbols) ?? [];
+    // Universes are basket/index names (e.g. "NIFTY100 ALPHA 30") - display as-is.
+    // Explicit stock picks are raw Jesse internal symbols (e.g. "RELIANCE-INR") - run
+    // through displayTicker so this column reads "NSE:RELIANCE" like every other
+    // ticker in the app, not the internal encoding.
+    const usingUniverses = cfg.universes && cfg.universes.length > 0;
+    const target = usingUniverses
+      ? cfg.universes!
+      : (cfg.symbols ?? []).map((sym) => displayTicker(sym, cfg.exchange));
     return {
       id: s.id,
       created_at: s.created_at,

@@ -30,7 +30,7 @@
     <AppCard v-if="missingCandles" title="Missing candles">
       <p class="ng:text-sm ng:mb-2">{{ missingCandles.message }}</p>
       <ul class="ng:text-sm ng:mb-2 ng:pl-5 ng:list-disc">
-        <li v-for="s in missingCandles.missing_symbols" :key="s">{{ symbolToTicker(s) }}</li>
+        <li v-for="s in missingCandles.missing_symbols" :key="s">{{ displayTicker(s, form.exchange) }}</li>
       </ul>
       <p class="ng:text-muted ng:text-sm ng:mb-3">
         Import the missing candles first, then re-run this backtest.
@@ -62,7 +62,7 @@
           </h3>
           <ul class="ng:text-[12.5px] ng:text-muted ng:pl-5 ng:list-disc ng:m-0">
             <li v-for="[symbol, price] in unaffordableEntries" :key="symbol">
-              {{ symbolToTicker(symbol) }} ({{ fmtINR(price) }})
+              {{ displayTicker(symbol, result.config.exchange) }} ({{ fmtINR(price) }})
             </li>
           </ul>
         </div>
@@ -111,7 +111,6 @@ import {
   fetchPortfolioRuns,
   isMissingCandlesResponse,
   runPortfolioBacktest,
-  symbolToTicker,
   validateBacktestPayload,
   type MissingCandlesResponse,
   type PortfolioBacktestResponse,
@@ -120,7 +119,7 @@ import {
   type PortfolioOptions,
   type RunSummary,
 } from '../api/portfolio';
-import { fmtINR, parseDateMs } from '../utils/format';
+import { displayTicker, fmtINR, parseDateMs } from '../utils/format';
 import { useNgNavigate, useNgRoute } from '../router';
 
 const route = useNgRoute();
@@ -294,7 +293,10 @@ const chartSeries = computed<EquitySeries[]>(() => {
   ];
   const bench = result.value.benchmark;
   if (bench && bench.equity_curve.length) {
-    series.push({ label: `Benchmark (${symbolToTicker(bench.symbol)})`, points: bench.equity_curve.map(pointFromCurve) });
+    series.push({
+      label: `Benchmark (${displayTicker(bench.symbol, result.value.config.exchange)})`,
+      points: bench.equity_curve.map(pointFromCurve),
+    });
   }
   return series;
 });
