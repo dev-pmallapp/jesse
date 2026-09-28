@@ -56,7 +56,7 @@ SESSIONS_ROOT = 'storage/universe-scans'
 
 # `/start` lets the caller pick the id, and it ends up in `session_dir()`/`session_path()`
 # (filesystem paths) and, unescaped, in the page's DOM (see
-# jesse/dashboard_patches/universe_scan_page.template.js's running-indicator) - so it
+# dashboard/ng/src/pages/ScanPage.vue's running-indicator) - so it
 # must be restricted to a small, inert charset rather than just "no path separators".
 # Generated ids are `jh.generate_unique_id()` (a uuid4, e.g.
 # '550e8400-e29b-41d4-a716-446655440000'), which fits comfortably inside this pattern.
