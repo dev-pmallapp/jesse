@@ -492,3 +492,35 @@ class UniverseScanCancelRequestJson(BaseModel):
 
 class UniverseScanDeleteRequestJson(BaseModel):
     id: str
+
+
+# =============================================================================
+# Portfolio (dev-pmallapp/jesse#91)
+# =============================================================================
+# `/portfolio/options` and `/portfolio/runs` take no fields (an empty `{}` body per the
+# API contract), so - like `get_universe_scan_sessions()` - those two routes take no
+# request model at all; only the endpoints below have a body worth typing.
+
+class PortfolioBacktestRequestJson(BaseModel):
+    exchange: str = 'NSE'
+    # Exactly one of `universe`/`symbols` (non-empty) is required; enforced by the
+    # controller, not here, because a Pydantic validator failure would surface as a 422
+    # and this app's `/portfolio/backtest` reserves 422 for `missing_candles` (see the
+    # controller's module docstring) - every other bad-input case must be a 400.
+    universe: Optional[str] = None
+    symbols: Optional[List[str]] = None
+    start_date: str
+    finish_date: str
+    capital: float = 15_000
+    rebalance_days: int = 15
+    fee: float = 0.001
+    benchmark: Optional[str] = None
+    save: bool = True
+
+
+class PortfolioRunRequestJson(BaseModel):
+    id: str
+
+
+class PortfolioRunDeleteRequestJson(BaseModel):
+    id: str
