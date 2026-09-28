@@ -145,19 +145,21 @@ def _load_catalog(exchanges: list) -> tuple:
     is True as soon as at least one did. A single exchange's provider failing (network
     down, NSE serving HTML instead of CSV, ...) is skipped rather than failing the whole
     search - see `IndiaDailySource.list_symbol_entries`/`ProviderUnavailableError`.
-    """
-    from jesse.services.historical_data.errors import HistoricalDataProviderError
-    from jesse.services.historical_data.india.exchange_providers import BseProvider, NseProvider
 
-    provider_classes = {'NSE': NseProvider, 'BSE': BseProvider}
+    Delegates the actual fetch to `equity_catalog.get_catalog_entries`, which caches
+    each exchange's catalog for ~12h (process-local) - a live NSE/BSE fetch on every
+    search-as-you-type keystroke would otherwise be far too slow.
+    """
+    from jesse.services import equity_catalog
+    from jesse.services.historical_data.errors import HistoricalDataProviderError
+
     entries = []
     catalog_available = False
     for exchange in exchanges:
-        provider_cls = provider_classes.get(exchange)
-        if provider_cls is None:
+        if exchange not in _SUPPORTED_EXCHANGES:
             continue
         try:
-            for entry in provider_cls().list_symbol_entries():
+            for entry in equity_catalog.get_catalog_entries(exchange):
                 entries.append((exchange, entry))
             catalog_available = True
         except HistoricalDataProviderError as e:
@@ -171,27 +173,13 @@ def _cached_universe_members() -> dict:
     (whose `as_of=None` default always ensures/re-fetches today's snapshot). Used to
     enrich a stock's industry/series/isin (not carried by the plain equity catalog -
     see `SymbolCatalogEntry`) and to answer "which baskets contain this stock".
+
+    Delegates to `equity_catalog.get_cached_universe_members`, which caches the result
+    for ~12h (process-local) - scanning every universe's snapshot directory and
+    re-parsing its CSV on every `/equities/stock` request is real I/O worth avoiding.
     """
-    from pathlib import Path
-
-    from jesse.services.historical_data.india.universes import (
-        DEFAULT_SNAPSHOT_DIR,
-        _UNIVERSE_REGISTRY,
-        _list_snapshot_dates,
-        _read_snapshot,
-        _slug,
-    )
-
-    by_symbol: dict = {}
-    for name in sorted(_UNIVERSE_REGISTRY):
-        universe_dir = Path(DEFAULT_SNAPSHOT_DIR) / _slug(name)
-        dates = _list_snapshot_dates(universe_dir)
-        if not dates:
-            continue
-        for member in _read_snapshot(universe_dir, max(dates), name):
-            entry = by_symbol.setdefault(member.symbol, (member, []))
-            entry[1].append(name)
-    return by_symbol
+    from jesse.services import equity_catalog
+    return equity_catalog.get_cached_universe_members()
 
 
 def _ticker_symbol(exchange: str, symbol: str) -> str:
